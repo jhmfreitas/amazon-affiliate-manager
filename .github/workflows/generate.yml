@@ -1,0 +1,28 @@
+name: Generate weekly pins
+
+on:
+  workflow_dispatch:          # run manually anytime from GitHub UI
+  schedule:
+    - cron: "0 8 * * 1"      # every Monday 8am UTC
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Generate and store pins
+        env:
+          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL:    ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:    ${{ secrets.SUPABASE_KEY }}
+          PEXELS_API_KEY:  ${{ secrets.PEXELS_API_KEY }}
+        run: python generate_pins.py

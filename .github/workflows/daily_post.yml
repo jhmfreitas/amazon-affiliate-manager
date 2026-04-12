@@ -1,0 +1,28 @@
+name: Post daily pin
+
+on:
+  workflow_dispatch:          # manual trigger for testing
+  schedule:
+    - cron: "0 10 * * *"     # every day at 10am UTC
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Post pin to Pinterest
+        env:
+          PINTEREST_TOKEN:    ${{ secrets.PINTEREST_TOKEN }}
+          SUPABASE_URL:       ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:       ${{ secrets.SUPABASE_KEY }}
+          PINTEREST_BOARD_ID: ${{ secrets.PINTEREST_BOARD_ID }}
+        run: python post_pin.py

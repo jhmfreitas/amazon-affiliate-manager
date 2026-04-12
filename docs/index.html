@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pin review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg:        #f7f6f2;
+    --surface:   #ffffff;
+    --border:    #e4e2db;
+    --border2:   #d0cec6;
+    --text:      #1a1917;
+    --muted:     #888580;
+    --faint:     #c4c2bb;
+    --green:     #1a6b4a;
+    --green-bg:  #eaf5ee;
+    --green-bd:  #b6dfc6;
+    --amber:     #92520a;
+    --amber-bg:  #fef3e2;
+    --amber-bd:  #f5d49a;
+    --red:       #b91c1c;
+    --red-bg:    #fef2f2;
+    --red-bd:    #fecaca;
+    --blue:      #1d4ed8;
+    --blue-bg:   #eff6ff;
+    --blue-bd:   #bfdbfe;
+    --accent:    #e60023;
+    --radius:    10px;
+    --radius-lg: 14px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Login screen ── */
+  .login-screen {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .login-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 2.5rem 2rem;
+    width: 100%; max-width: 360px; text-align: center;
+  }
+  .login-logo {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px; font-weight: 500;
+    color: var(--accent); letter-spacing: 0.04em;
+    margin-bottom: 1.5rem;
+  }
+  .login-title {
+    font-size: 20px; font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .login-sub {
+    font-size: 13px; color: var(--muted);
+    margin-bottom: 2rem; line-height: 1.5;
+  }
+  .btn-google {
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px; width: 100%;
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 11px 16px;
+    font-family: 'DM Sans', sans-serif; font-size: 14px;
+    font-weight: 500; cursor: pointer; color: var(--text);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn-google:hover { background: var(--bg); border-color: var(--border2); }
+  .btn-google svg { flex-shrink: 0; }
+  .login-note {
+    font-size: 11px; color: var(--faint);
+    margin-top: 1.5rem; line-height: 1.6;
+  }
+
+  /* ── App (hidden until logged in) ── */
+  .app { display: none; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: 220px; background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 1.5rem 1rem;
+    display: flex; flex-direction: column; gap: 4px;
+    z-index: 100;
+  }
+  .logo {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px; font-weight: 500;
+    color: var(--accent); letter-spacing: 0.04em;
+    padding: 0 8px; margin-bottom: 1.5rem;
+  }
+  .nav-label {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--faint); padding: 0 8px; margin: 12px 0 4px;
+  }
+  .nav-btn {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: var(--radius);
+    border: none; background: transparent;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px; color: var(--muted);
+    cursor: pointer; text-align: left; width: 100%;
+    transition: background 0.1s, color 0.1s;
+  }
+  .nav-btn:hover { background: var(--bg); color: var(--text); }
+  .nav-btn.active { background: var(--bg); color: var(--text); font-weight: 500; }
+  .nav-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-all      { background: var(--text); }
+  .dot-pending  { background: #f59e0b; }
+  .dot-approved { background: #22c55e; }
+  .dot-posted   { background: var(--faint); }
+  .nav-count {
+    margin-left: auto; font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--faint);
+  }
+
+  /* User info at bottom of sidebar */
+  .sidebar-footer {
+    margin-top: auto; padding: 10px 8px 0;
+    border-top: 1px solid var(--border);
+  }
+  .user-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+  }
+  .user-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--blue-bg); border: 1px solid var(--blue-bd);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: var(--blue);
+    flex-shrink: 0; overflow: hidden;
+  }
+  .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .user-email {
+    font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .btn-signout {
+    width: 100%; background: transparent;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px; font-family: 'DM Sans', sans-serif;
+    font-size: 12px; color: var(--muted); cursor: pointer;
+    text-align: center;
+  }
+  .btn-signout:hover { color: var(--red); border-color: var(--red-bd); }
+
+  /* ── Main ── */
+  .main { margin-left: 220px; padding: 2rem 2.5rem; max-width: 900px; }
+
+  .page-header {
+    display: flex; justify-content: space-between;
+    align-items: flex-start; margin-bottom: 1.75rem;
+  }
+  .page-title { font-size: 22px; font-weight: 600; }
+  .page-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .btn-refresh {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 7px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px;
+    color: var(--muted); cursor: pointer;
+  }
+  .btn-refresh:hover { color: var(--text); border-color: var(--border2); }
+
+  /* ── Stats ── */
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 10px; margin-bottom: 2rem;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 14px 18px;
+  }
+  .stat-label {
+    font-size: 11px; color: var(--muted); margin-bottom: 6px;
+    font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .stat-val {
+    font-size: 26px; font-weight: 600;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* ── Pin card ── */
+  .pin-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); margin-bottom: 14px;
+    overflow: hidden; transition: border-color 0.15s;
+  }
+  .pin-card:hover { border-color: var(--border2); }
+  .pin-inner {
+    display: grid; grid-template-columns: 175px 1fr;
+    min-height: 280px;
+  }
+
+  /* Image panel */
+  .img-panel {
+    background: var(--bg); position: relative;
+    border-right: 1px solid var(--border); overflow: hidden;
+  }
+  .pin-img {
+    width: 100%; height: 100%;
+    object-fit: cover; display: block; min-height: 280px;
+  }
+  .img-hover {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.55);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 7px;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .img-panel:hover .img-hover { opacity: 1; }
+  .img-action-btn {
+    background: white; border: none; border-radius: 8px;
+    padding: 7px 0; font-family: 'DM Sans', sans-serif;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    width: 140px; text-align: center; color: #111;
+  }
+  .img-action-btn:hover { background: #f0f0f0; }
+
+  /* Content panel */
+  .content-panel {
+    padding: 16px 18px; display: flex;
+    flex-direction: column; gap: 12px;
+  }
+  .pin-top {
+    display: flex; justify-content: space-between;
+    align-items: center; gap: 10px;
+  }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 3px 10px;
+    border-radius: 99px; letter-spacing: 0.02em;
+  }
+  .badge-pending  { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd); }
+  .badge-approved { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-bd); }
+  .badge-posted   { background: var(--bg);         color: var(--muted);  border: 1px solid var(--border); }
+  .score-chip {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    color: var(--muted); background: var(--bg);
+    border: 1px solid var(--border); padding: 2px 9px; border-radius: 99px;
+  }
+  .field-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--faint); margin-bottom: 3px;
+  }
+  .field-title { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.4; }
+  .field-desc  { font-size: 12px; color: var(--muted); line-height: 1.65; }
+  .tags-wrap   { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag {
+    background: var(--bg); color: var(--muted); font-size: 11px;
+    padding: 3px 8px; border-radius: 99px; border: 1px solid var(--border);
+  }
+
+  /* Edit inputs */
+  .edit-input, .edit-textarea {
+    width: 100%; font-size: 13px; padding: 7px 10px;
+    border-radius: 8px; border: 1px solid var(--border2);
+    background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif; outline: none;
+    transition: border-color 0.15s;
+  }
+  .edit-input:focus, .edit-textarea:focus {
+    border-color: var(--blue); background: var(--surface);
+  }
+  .edit-textarea { min-height: 85px; resize: vertical; }
+  .search-row { display: flex; gap: 7px; }
+  .search-row .edit-input { flex: 1; min-width: 0; }
+  .btn-fetch {
+    background: var(--blue-bg); color: var(--blue);
+    border: 1px solid var(--blue-bd); border-radius: 8px;
+    padding: 7px 13px; font-family: 'DM Sans', sans-serif;
+    font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  }
+  .btn-fetch:hover { background: var(--blue-bd); }
+
+  /* Actions */
+  .actions {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding-top: 10px; border-top: 1px solid var(--border); margin-top: auto;
+  }
+  .btn-approve {
+    background: var(--accent); color: white; border: none;
+    border-radius: var(--radius); padding: 7px 18px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px;
+    font-weight: 500; cursor: pointer; margin-left: auto;
+    transition: opacity 0.1s;
+  }
+  .btn-approve:hover { opacity: 0.88; }
+  .btn-secondary {
+    background: transparent; border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 7px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 12px;
+    cursor: pointer; color: var(--muted);
+  }
+  .btn-secondary:hover { border-color: var(--border2); color: var(--text); }
+  .btn-danger {
+    background: transparent; border: 1px solid var(--red-bd);
+    border-radius: var(--radius); padding: 7px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 12px;
+    cursor: pointer; color: var(--red);
+  }
+  .btn-danger:hover { background: var(--red-bg); }
+  .btn-save {
+    background: var(--blue-bg); color: var(--blue);
+    border: 1px solid var(--blue-bd); border-radius: var(--radius);
+    padding: 7px 16px; font-family: 'DM Sans', sans-serif;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+  .btn-save:hover { background: var(--blue-bd); }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--text); color: var(--bg);
+    border-radius: var(--radius); padding: 10px 20px;
+    font-size: 13px; font-weight: 500; display: none;
+    z-index: 999; white-space: nowrap;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* Loading / empty */
+  .loading {
+    text-align: center; padding: 4rem 2rem;
+    color: var(--muted); font-size: 14px;
+    font-family: 'DM Mono', monospace;
+  }
+  .empty {
+    text-align: center; padding: 3rem; color: var(--muted);
+    font-size: 13px; border: 1px dashed var(--border);
+    border-radius: var(--radius-lg);
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--border); border-top-color: var(--muted);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+
+  @media (max-width: 640px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 1rem; }
+    .pin-inner { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .pin-img { min-height: 200px; }
+    .img-hover { opacity: 1; background: rgba(0,0,0,0.3);
+      justify-content: flex-end; padding-bottom: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<script>
+  const SUPABASE_URL  = "https://xptveknkjmunoyuvlkkq.supabase.co";
+  const SUPABASE_ANON = "sb_publishable_NkQ9KYw1lEBUR9WlPRS9Ng_tucXsTmYE";
+</script>
+<!-- ══════════════════════════════════════════════ -->
+
+
+<!-- ── Login screen ── -->
+<div class="login-screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">// pin-review</div>
+    <h1 class="login-title">Sign in</h1>
+    <p class="login-sub">This tool is private.<br>Sign in with the Google account you own this project with.</p>
+    <button class="btn-google" onclick="signIn()">
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+        <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+        <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
+      </svg>
+      Continue with Google
+    </button>
+    <p class="login-note">Only your authorised Google account can access this app.<br>All others will be redirected back here.</p>
+  </div>
+</div>
+
+
+<!-- ── App (shown after login) ── -->
+<div class="app" id="app">
+
+  <nav class="sidebar">
+    <div class="logo">// pin-review</div>
+    <div class="nav-label">Filter</div>
+    <button class="nav-btn active" onclick="setFilter('all', this)">
+      <span class="nav-dot dot-all"></span> All pins
+      <span class="nav-count" id="nc-all">0</span>
+    </button>
+    <button class="nav-btn" onclick="setFilter('pending', this)">
+      <span class="nav-dot dot-pending"></span> Pending
+      <span class="nav-count" id="nc-pending">0</span>
+    </button>
+    <button class="nav-btn" onclick="setFilter('approved', this)">
+      <span class="nav-dot dot-approved"></span> Approved
+      <span class="nav-count" id="nc-approved">0</span>
+    </button>
+    <button class="nav-btn" onclick="setFilter('posted', this)">
+      <span class="nav-dot dot-posted"></span> Posted
+      <span class="nav-count" id="nc-posted">0</span>
+    </button>
+
+    <div class="sidebar-footer">
+      <div class="user-row">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span class="user-email" id="user-email">…</span>
+      </div>
+      <button class="btn-signout" onclick="signOut()">Sign out</button>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Pin review</h1>
+        <p class="page-sub">Review, edit and approve pins before they go live</p>
+      </div>
+      <button class="btn-refresh" onclick="loadPins()">
+        <span id="refresh-icon">↻</span> Refresh
+      </button>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Total</div>
+        <div class="stat-val" id="s-total">–</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Pending</div>
+        <div class="stat-val" id="s-pending">–</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Approved</div>
+        <div class="stat-val" id="s-approved">–</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Posted</div>
+        <div class="stat-val" id="s-posted">–</div>
+      </div>
+    </div>
+
+    <div id="pin-list">
+      <div class="loading"><span class="spinner"></span> Loading pins…</div>
+    </div>
+  </main>
+
+</div>
+
+<input type="file" id="file-input" accept="image/*" style="display:none" />
+<div class="toast" id="toast"></div>
+
+
+<script>
+// ── Supabase client ──────────────────────────────────────────
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+let pins        = [];
+let filter      = 'all';
+let editingId   = null;
+let uploadForId = null;
+let currentUser = null;
+
+// ── Auth ─────────────────────────────────────────────────────
+
+async function signIn() {
+  const { error } = await db.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      // After login, return to this same page
+      redirectTo: window.location.href
+    }
+  });
+  if (error) toast('Sign-in error: ' + error.message);
+}
+
+async function signOut() {
+  await db.auth.signOut();
+  showLogin();
+}
+
+function showLogin() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+function showApp(user) {
+  currentUser = user;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  // Show user info in sidebar
+  const email  = user.email || '';
+  const initials = email.slice(0, 2).toUpperCase();
+  const avatarEl = document.getElementById('user-avatar');
+  const emailEl  = document.getElementById('user-email');
+
+  emailEl.textContent = email;
+
+  const avatarUrl = user.user_metadata?.avatar_url;
+  if (avatarUrl) {
+    avatarEl.innerHTML = `<img src="${avatarUrl}" alt="avatar" />`;
+  } else {
+    avatarEl.textContent = initials;
+  }
+
+  loadPins();
+}
+
+// Listen for auth state changes (handles redirect back after Google login)
+db.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+
+    // Verify against allowlist (extra UX safety net)
+    const { data, error } = await db
+      .from('allowed_users')
+      .select('email')
+      .eq('email', session.user.email)
+      .maybeSingle();
+
+    if (!data || error) {
+      await db.auth.signOut();
+      showLogin();
+      document.getElementById('login-note').textContent =
+        'Your account (' + session.user.email + ') is not authorised.';
+      return;
+    }
+
+    showApp(session.user);
+
+  } else {
+    showLogin();
+  }
+});
+
+// ── Load pins ────────────────────────────────────────────────
+
+async function loadPins() {
+  document.getElementById('refresh-icon').innerHTML =
+    '<span class="spinner"></span>';
+
+  const { data, error } = await db
+    .from('pins')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  document.getElementById('refresh-icon').textContent = '↻';
+
+  if (error) {
+    document.getElementById('pin-list').innerHTML =
+      `<div class="empty">Error: ${error.message}<br><br>` +
+      `Check your SUPABASE_URL and SUPABASE_ANON values, ` +
+      `and make sure RLS policies are set up correctly.</div>`;
+    return;
+  }
+
+  pins = data || [];
+  updateStats();
+  render();
+}
+
+// ── Stats ────────────────────────────────────────────────────
+
+function getStatus(pin) {
+  if (pin.posted)   return 'posted';
+  if (pin.approved) return 'approved';
+  return 'pending';
+}
+
+function updateStats() {
+  const total    = pins.length;
+  const pending  = pins.filter(p => getStatus(p) === 'pending').length;
+  const approved = pins.filter(p => getStatus(p) === 'approved').length;
+  const posted   = pins.filter(p => getStatus(p) === 'posted').length;
+
+  document.getElementById('s-total').textContent    = total;
+  document.getElementById('s-pending').textContent  = pending;
+  document.getElementById('s-approved').textContent = approved;
+  document.getElementById('s-posted').textContent   = posted;
+
+  document.getElementById('nc-all').textContent      = total;
+  document.getElementById('nc-pending').textContent  = pending;
+  document.getElementById('nc-approved').textContent = approved;
+  document.getElementById('nc-posted').textContent   = posted;
+}
+
+// ── Filter ───────────────────────────────────────────────────
+
+function setFilter(f, btn) {
+  filter = f; editingId = null;
+  document.querySelectorAll('.nav-btn')
+    .forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+// ── Approve ──────────────────────────────────────────────────
+
+async function approve(id) {
+  const { error } = await db.from('pins')
+    .update({ approved: true }).eq('id', id);
+  if (error) { toast('Error: ' + error.message); return; }
+  pins.find(p => p.id === id).approved = true;
+  updateStats(); render(); toast('Approved — scheduled to post!');
+}
+
+// ── Remove ───────────────────────────────────────────────────
+
+async function remove(id) {
+  if (!confirm('Remove this pin permanently?')) return;
+  const { error } = await db.from('pins').delete().eq('id', id);
+  if (error) { toast('Error: ' + error.message); return; }
+  pins = pins.filter(p => p.id !== id);
+  updateStats(); render(); toast('Pin removed.');
+}
+
+// ── Edit ─────────────────────────────────────────────────────
+
+function startEdit(id) { editingId = id; render(); }
+function cancelEdit()  { editingId = null; render(); }
+
+async function saveEdit(id) {
+  const title = document.getElementById(`t-${id}`).value.trim();
+  const description = document.getElementById(`d-${id}`).value.trim();
+  const hashtags = document.getElementById(`h-${id}`).value
+    .split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean);
+
+  if (!title || !description) {
+    toast('Title and description cannot be empty.'); return;
+  }
+
+  const { error } = await db.from('pins')
+    .update({ title, description, hashtags }).eq('id', id);
+  if (error) { toast('Error: ' + error.message); return; }
+
+  const pin = pins.find(p => p.id === id);
+  pin.title = title; pin.description = description; pin.hashtags = hashtags;
+  editingId = null; render(); toast('Changes saved!');
+}
+
+// ── Regen image — via Edge Function (Pexels key stays server-side) ──
+
+async function regenImage(id) {
+  const pin = pins.find(p => p.id === id);
+  toast('Fetching new image…');
+  try {
+    const { data, error } = await db.functions.invoke('regen-image', {
+      body: { pin_id: id, search_query: pin.pexels_search }
+    });
+    if (error) throw new Error(error.message);
+    pin.image_url = data.image_url;
+    render(); toast('New image loaded!');
+  } catch (e) {
+    toast('Image error: ' + e.message);
+  }
+}
+
+async function changeSearch(id) {
+  const q = document.getElementById(`search-${id}`).value.trim();
+  if (!q) { toast('Enter a search query first.'); return; }
+  pins.find(p => p.id === id).pexels_search = q;
+  await db.from('pins').update({ pexels_search: q }).eq('id', id);
+  await regenImage(id);
+}
+
+// ── Upload own image ─────────────────────────────────────────
+
+function triggerUpload(id) {
+  uploadForId = id;
+  document.getElementById('file-input').click();
+}
+
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file || !uploadForId) return;
+  toast('Uploading image…');
+
+  const fileName = `custom-${uploadForId}-${Date.now()}.jpg`;
+  const { error: upErr } = await db.storage
+    .from('pin-images')
+    .upload(fileName, file, { upsert: true, contentType: file.type });
+
+  if (upErr) { toast('Upload failed: ' + upErr.message); return; }
+
+  const { data: { publicUrl } } = db.storage
+    .from('pin-images').getPublicUrl(fileName);
+
+  const { error: dbErr } = await db.from('pins')
+    .update({ image_url: publicUrl }).eq('id', uploadForId);
+
+  if (dbErr) { toast('DB error: ' + dbErr.message); return; }
+
+  pins.find(p => p.id === uploadForId).image_url = publicUrl;
+  uploadForId = null;
+  e.target.value = '';
+  render(); toast('Your image saved!');
+});
+
+// ── Toast ────────────────────────────────────────────────────
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.display = 'none', 2800);
+}
+
+// ── Render ───────────────────────────────────────────────────
+
+function esc(str) {
+  return (str || '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function render() {
+  const list = document.getElementById('pin-list');
+  const filtered = filter === 'all'
+    ? pins : pins.filter(p => getStatus(p) === filter);
+
+  if (!filtered.length) {
+    list.innerHTML =
+      `<div class="empty">No ${filter === 'all' ? '' : filter + ' '}pins yet.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(pin => {
+    const status    = getStatus(pin);
+    const isEditing = editingId === pin.id;
+    const canEdit   = !pin.posted;
+    const tags      = (pin.hashtags || [])
+      .map(t => `<span class="tag">#${esc(t)}</span>`).join('');
+
+    return `
+    <div class="pin-card">
+      <div class="pin-inner">
+
+        <div class="img-panel">
+          <img class="pin-img" src="${esc(pin.image_url || '')}"
+               alt="pin image" loading="lazy"
+               onerror="this.style.opacity='0'" />
+          ${canEdit ? `
+          <div class="img-hover">
+            <button class="img-action-btn" onclick="regenImage(${pin.id})">
+              Random new image
+            </button>
+            <button class="img-action-btn" onclick="triggerUpload(${pin.id})">
+              Upload my own
+            </button>
+          </div>` : ''}
+        </div>
+
+        <div class="content-panel">
+          <div class="pin-top">
+            <span class="badge badge-${status}">${status}</span>
+            <div style="display:flex;gap:6px;align-items:center;">
+              ${pin.score
+                ? `<span class="score-chip">${pin.score}/10</span>` : ''}
+              <span style="font-family:'DM Mono',monospace;font-size:11px;
+                color:var(--faint);">#${pin.id}</span>
+            </div>
+          </div>
+
+          ${isEditing ? `
+            <div>
+              <div class="field-label">Title</div>
+              <input id="t-${pin.id}" class="edit-input"
+                value="${esc(pin.title)}" maxlength="100" />
+            </div>
+            <div>
+              <div class="field-label">Description</div>
+              <textarea id="d-${pin.id}" class="edit-textarea">${esc(pin.description)}</textarea>
+            </div>
+            <div>
+              <div class="field-label">Hashtags — comma separated, no #</div>
+              <input id="h-${pin.id}" class="edit-input"
+                value="${esc((pin.hashtags || []).join(', '))}" />
+            </div>
+            <div>
+              <div class="field-label">Image search query</div>
+              <div class="search-row">
+                <input id="search-${pin.id}" class="edit-input"
+                  value="${esc(pin.pexels_search || '')}"
+                  placeholder="e.g. home office natural light" />
+                <button class="btn-fetch"
+                  onclick="changeSearch(${pin.id})">Fetch image</button>
+              </div>
+            </div>
+          ` : `
+            <div>
+              <div class="field-label">Title</div>
+              <div class="field-title">${esc(pin.title)}</div>
+            </div>
+            <div>
+              <div class="field-label">Description</div>
+              <div class="field-desc">${esc(pin.description)}</div>
+            </div>
+            <div>
+              <div class="field-label">Hashtags</div>
+              <div class="tags-wrap">${tags}</div>
+            </div>
+            ${pin.score_reason ? `
+            <div>
+              <div class="field-label">AI score reason</div>
+              <div style="font-size:11px;color:var(--muted);
+                font-style:italic;">${esc(pin.score_reason)}</div>
+            </div>` : ''}
+          `}
+
+          <div class="actions">
+            ${pin.posted ? `
+              <span style="font-size:12px;color:var(--muted);">
+                Posted · Pinterest ID:
+                <span style="font-family:'DM Mono',monospace;">
+                  ${esc(pin.pinterest_id || '–')}
+                </span>
+              </span>
+            ` : isEditing ? `
+              <button class="btn-secondary" onclick="cancelEdit()">Cancel</button>
+              <button class="btn-save" onclick="saveEdit(${pin.id})">Save changes</button>
+            ` : `
+              <button class="btn-danger" onclick="remove(${pin.id})">Remove</button>
+              <button class="btn-secondary" onclick="startEdit(${pin.id})">Edit</button>
+              ${pin.approved
+                ? `<span style="font-size:12px;color:var(--green);
+                    margin-left:auto;font-weight:500;">Scheduled to post</span>`
+                : `<button class="btn-approve"
+                    onclick="approve(${pin.id})">Approve</button>`
+              }
+            `}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>
