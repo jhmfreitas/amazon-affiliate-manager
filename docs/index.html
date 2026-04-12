@@ -385,7 +385,7 @@
       </svg>
       Continue with Google
     </button>
-    <p class="login-note">Only your authorised Google account can access this app.<br>All others will be redirected back here.</p>
+    <p class="login-note" id="login-note">Only your authorised Google account can access this app.<br>Sign in with the Google account you own this project with.</p>
   </div>
 </div>
 
@@ -464,6 +464,22 @@
 
 
 <script>
+  // Check if redirected back with an error from Supabase Auth
+const urlParams = new URLSearchParams(window.location.search);
+const urlError  = urlParams.get('error_description') ||
+                  new URLSearchParams(window.location.hash.slice(1))
+                    .get('error_description');
+
+if (urlError) {
+  // Clean the ugly params out of the URL bar
+  window.history.replaceState({}, document.title, window.location.pathname);
+
+  // Show login screen with a friendly message
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-note').textContent =
+    'Access denied. This account is not authorised to use this app.';
+}
+
 // ── Supabase client ──────────────────────────────────────────
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON);
