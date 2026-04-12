@@ -537,27 +537,43 @@ function showApp(user) {
 
 // Listen for auth state changes (handles redirect back after Google login)
 db.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) {
 
-    // Verify against allowlist (extra UX safety net)
+  // Only act on actual sign-in events, not every state change
+  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+
+    if (!session?.user) {
+      showLogin();
+      return;
+    }
+
+    // Small wait to ensure session is fully attached to the client
+    await new Promise(r => setTimeout(r, 100));
+
     const { data, error } = await db
       .from('allowed_users')
       .select('email')
       .eq('email', session.user.email)
       .maybeSingle();
 
-    if (!data || error) {
+    if (error) {
+      // If we can't read allowed_users, log it and fail safe
+      console.error('allowed_users query failed:', error);
       await db.auth.signOut();
       showLogin();
       document.getElementById('login-note').textContent =
-        'Your account (' + session.user.email + ') is not authorised.';
+        'Auth error: ' + error.message;
+      return;
+    }
+
+    if (!data) {
+      await db.auth.signOut();
+      showLogin();
+      document.getElementById('login-note').textContent =
+        'Access denied. ' + session.user.email + ' is not authorised.';
       return;
     }
 
     showApp(session.user);
-
-  } else {
-    showLogin();
   }
 });
 
