@@ -480,8 +480,7 @@ async function signIn() {
   const { error } = await db.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      // After login, return to this same page
-      redirectTo: window.location.href
+      redirectTo: 'https://jhmfreitas.github.io/amazon-affiliate-manager'
     }
   });
   if (error) toast('Sign-in error: ' + error.message);
