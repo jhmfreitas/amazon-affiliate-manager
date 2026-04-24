@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Amazon Affiliate Manager — by JHM Freitas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #f7f6f2;
+    --surface: #ffffff;
+    --border:  #e4e2db;
+    --text:    #1a1917;
+    --muted:   #888580;
+    --faint:   #c4c2bb;
+    --accent:  #e60023;
+    --green:   #1a6b4a;
+    --green-bg:#eaf5ee;
+    --green-bd:#b6dfc6;
+    --radius:  10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Nav ── */
+  nav {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 0 2rem; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-logo {
+    font-family: 'DM Mono', monospace; font-size: 13px;
+    font-weight: 500; color: var(--accent); letter-spacing: 0.04em;
+  }
+  .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+  .nav-links a {
+    font-size: 13px; color: var(--muted);
+    text-decoration: none;
+  }
+  .nav-links a:hover { color: var(--text); }
+
+  /* ── Hero ── */
+  .hero {
+    max-width: 700px; margin: 0 auto;
+    padding: 5rem 2rem 3rem; text-align: center;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--green-bg); color: var(--green);
+    border: 1px solid var(--green-bd);
+    border-radius: 99px; padding: 4px 14px;
+    font-size: 12px; font-weight: 500; margin-bottom: 1.5rem;
+  }
+  .hero-badge-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+  }
+  h1 {
+    font-size: 38px; font-weight: 600; line-height: 1.2;
+    margin-bottom: 1rem;
+    letter-spacing: -0.02em;
+  }
+  h1 span { color: var(--accent); }
+  .hero-sub {
+    font-size: 16px; color: var(--muted);
+    line-height: 1.7; max-width: 520px;
+    margin: 0 auto 2.5rem;
+  }
+  .hero-note {
+    font-size: 12px; color: var(--faint);
+    font-family: 'DM Mono', monospace;
+    margin-top: 1rem;
+  }
+
+  /* ── How it works ── */
+  .section {
+    max-width: 700px; margin: 0 auto;
+    padding: 3rem 2rem;
+  }
+  .section-label {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--faint); margin-bottom: 1rem;
+    font-family: 'DM Mono', monospace;
+  }
+  .section-title {
+    font-size: 24px; font-weight: 600;
+    margin-bottom: 2rem; letter-spacing: -0.01em;
+  }
+  .steps { display: flex; flex-direction: column; gap: 0; }
+  .step { display: grid; grid-template-columns: 36px 1fr; gap: 14px; }
+  .step-left { display: flex; flex-direction: column; align-items: center; }
+  .step-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--surface); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+    font-family: 'DM Mono', monospace; flex-shrink: 0;
+  }
+  .step-line {
+    width: 1px; flex: 1; min-height: 24px;
+    background: var(--border); margin: 6px 0;
+  }
+  .step-content { padding-bottom: 28px; }
+  .step-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .step-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  /* ── Pinterest usage section ── */
+  .usage-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 2rem;
+    max-width: 700px; margin: 0 auto 3rem;
+  }
+  .usage-title {
+    font-size: 18px; font-weight: 600; margin-bottom: 1rem;
+  }
+  .usage-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .usage-item {
+    background: var(--bg); border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .usage-item-label {
+    font-size: 11px; font-weight: 600; color: var(--faint);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin-bottom: 4px; font-family: 'DM Mono', monospace;
+  }
+  .usage-item-val {
+    font-size: 13px; color: var(--text); line-height: 1.5;
+  }
+
+  /* ── Tech stack ── */
+  .stack {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 1.5rem;
+  }
+  .stack-chip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 99px; padding: 5px 14px;
+    font-size: 12px; font-family: 'DM Mono', monospace;
+    color: var(--muted);
+  }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 1.5rem 2rem;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 10px;
+    max-width: 100%;
+  }
+  .footer-left {
+    font-size: 12px; color: var(--faint);
+    font-family: 'DM Mono', monospace;
+  }
+  .footer-links { display: flex; gap: 1.5rem; }
+  .footer-links a {
+    font-size: 12px; color: var(--faint); text-decoration: none;
+  }
+  .footer-links a:hover { color: var(--muted); }
+
+  .divider {
+    border: none; border-top: 1px solid var(--border);
+    max-width: 700px; margin: 0 auto;
+  }
+
+  @media (max-width: 540px) {
+    h1 { font-size: 26px; }
+    .usage-grid { grid-template-columns: 1fr; }
+    footer { flex-direction: column; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-logo">// Amazon Affiliate Manager</span>
+  <div class="nav-links">
+    <a href="privacy-policy.html">Privacy Policy</a>
+    <a href="mailto:business.jhmf@gmail.com">Contact</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-badge">
+    <span class="hero-badge-dot"></span>
+    Private tool · Personal use only
+  </div>
+  <h1>Automate your <span>Pinterest</span> affiliate strategy</h1>
+  <p class="hero-sub">
+    Amazon Affiliate Manager is a personal automation tool that generates,
+    reviews and publishes Pinterest pins for Amazon affiliate products —
+    using AI-driven product scoring to maximise conversions.
+  </p>
+  <p class="hero-note">Built and operated by JHM Freitas · Not a public product</p>
+</div>
+
+<hr class="divider" />
+
+<!-- How it works -->
+<div class="section">
+  <p class="section-label">How it works</p>
+  <h2 class="section-title">End-to-end Pinterest automation</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-left">
+        <div class="step-num">1</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">Product scoring</div>
+        <div class="step-desc">Weekly data analysis ranks Amazon products by sales rank, search trends and commission rate to identify the best products to promote.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-left">
+        <div class="step-num">2</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">AI pin generation</div>
+        <div class="step-desc">For each top-ranked product, AI generates keyword-rich pin titles, descriptions and hashtags optimised for Pinterest SEO and conversion.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-left">
+        <div class="step-num">3</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">Human review and approval</div>
+        <div class="step-desc">Each generated pin is reviewed and approved via a private dashboard before it is published — ensuring quality and compliance.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-left">
+        <div class="step-num">4</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="step-content">
+        <div class="step-title">Scheduled Pinterest publishing</div>
+        <div class="step-desc">Approved pins are published to Pinterest automatically on a daily schedule using the Pinterest API, with affiliate links embedded in each pin.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider" />
+
+<!-- Pinterest API usage -->
+<div class="section">
+  <p class="section-label">Pinterest API usage</p>
+  <h2 class="section-title">How this tool uses the Pinterest API</h2>
+  <div class="usage-card" style="margin: 0 0 0 0;">
+    <div class="usage-grid">
+      <div class="usage-item">
+        <div class="usage-item-label">Operator</div>
+        <div class="usage-item-val">JHM Freitas — personal use only</div>
+      </div>
+      <div class="usage-item">
+        <div class="usage-item-label">Pinterest account</div>
+        <div class="usage-item-val">Single personal account owned by the operator</div>
+      </div>
+      <div class="usage-item">
+        <div class="usage-item-label">API operations used</div>
+        <div class="usage-item-val">POST /v5/pins — create pins on the operator's own boards</div>
+      </div>
+      <div class="usage-item">
+        <div class="usage-item-label">Posting frequency</div>
+        <div class="usage-item-val">1 pin per day, scheduled automatically</div>
+      </div>
+      <div class="usage-item">
+        <div class="usage-item-label">Data accessed</div>
+        <div class="usage-item-val">No Pinterest user data is read or stored. Only pins are created.</div>
+      </div>
+      <div class="usage-item">
+        <div class="usage-item-label">Third-party access</div>
+        <div class="usage-item-val">No third parties have access to this tool or the API credentials</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider" />
+
+<!-- Tech stack -->
+<div class="section">
+  <p class="section-label">Built with</p>
+  <h2 class="section-title">Technology stack</h2>
+  <div class="stack">
+    <span class="stack-chip">Pinterest API v5</span>
+    <span class="stack-chip">Google Gemini</span>
+    <span class="stack-chip">Amazon Creators API</span>
+    <span class="stack-chip">Pexels API</span>
+    <span class="stack-chip">Supabase</span>
+    <span class="stack-chip">GitHub Actions</span>
+    <span class="stack-chip">Python</span>
+    <span class="stack-chip">GitHub Pages</span>
+  </div>
+</div>
+
+<footer>
+  <span class="footer-left">Amazon Affiliate Manager · JHM Freitas · Personal tool</span>
+  <div class="footer-links">
+    <a href="privacy-policy.html">Privacy Policy</a>
+    <a href="mailto:business.jhmf@gmail.com">business.jhmf@gmail.com</a>
+  </div>
+</footer>
+
+</body>
+</html>
