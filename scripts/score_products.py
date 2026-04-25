@@ -14,7 +14,7 @@ Top-scored product is then picked by generate_pins.py.
 """
 
 import os, json, time, re, requests
-from datetime import datetime
+from datetime import datetime, timezone
 from pinterest_auth import PinterestAuth
 
 # ── Secrets ──────────────────────────────────────────────────
@@ -305,7 +305,7 @@ def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves):
             "trend_score":     trend_score,
             "trend_dir":       trend_dir,
             "pinterest_saves": saves,
-            "last_scored_at":  datetime.utcnow().isoformat()
+            "last_scored_at":  datetime.now(timezone.utc).isoformat()
         }
     )
     resp.raise_for_status()
@@ -315,7 +315,7 @@ def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(f"Product scoring — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"Product scoring — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     print("=" * 60)
 
     products = load_products()
