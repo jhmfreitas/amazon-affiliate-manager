@@ -1,1 +1,3 @@
 requests==2.31.0
+pytrends==4.9.2
+amazon-paapi==1.0.8
