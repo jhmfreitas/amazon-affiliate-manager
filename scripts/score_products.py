@@ -160,8 +160,8 @@ def normalize_saves(saves):
 # ── SCORING ENGINE ─────────────────────────────────
 def compute_score(p):
     trend = p["trend_score"]
-    saves = p["saves"]
-    bsr   = normalize_bsr(p["bsr"])
+    saves = p["pinterest_saves"]
+    bsr   = normalize_bsr(p["bsr_rank"])
 
     trend_delta = normalize_delta(p["trend_delta"])
     save_delta  = normalize_delta(p["save_delta"])
