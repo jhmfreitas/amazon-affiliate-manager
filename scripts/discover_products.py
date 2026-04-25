@@ -77,6 +77,8 @@ def insert_products(products, category):
             "asin": p["asin"],
             "name": p["name"],
             "category": category,
+            "niche": category.replace("_", " "),  # Simple default
+            "audience": "general shoppers",         # Simple default
             "active": True
         }
 
