@@ -18,7 +18,7 @@ SUPABASE_HEADERS = {
 
 # ── TARGET CATEGORIES ──────────────────────────────
 CATEGORIES = {
-    "fashion_trunks": "https://www.amazon.co.uk/gp/bestsellers/fashion/1731039031",
+    "fashion": "https://www.amazon.co.uk/gp/bestsellers/fashion",
     "home_kitchen":   "https://www.amazon.co.uk/gp/bestsellers/kitchen",
     "beauty":         "https://www.amazon.co.uk/gp/bestsellers/beauty",
     "sports":         "https://www.amazon.co.uk/gp/bestsellers/sports",
@@ -88,6 +88,8 @@ def insert_products(products, category):
 
         if resp.status_code in (200, 201):
             inserted += 1
+        else:
+            print(f"    Error inserting {p['asin']}: {resp.status_code} — {resp.text[:200]}")
 
         time.sleep(0.2)
 
