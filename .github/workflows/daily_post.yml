@@ -30,4 +30,4 @@ jobs:
           SUPABASE_URL:            ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:            ${{ secrets.SUPABASE_KEY }}
           PINTEREST_BOARD_ID:      ${{ secrets.PINTEREST_BOARD_ID }}
-        run: python post_pin.py
+        run: python scripts/post_pin.py

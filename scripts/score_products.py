@@ -15,12 +15,12 @@ Top-scored product is then picked by generate_pins.py.
 
 import os, json, time, re, requests
 from datetime import datetime
+from pinterest_auth import PinterestAuth
 
 # ── Secrets ──────────────────────────────────────────────────
-GEMINI_KEY      = os.environ["GEMINI_API_KEY"]
-SUPABASE_URL    = os.environ["SUPABASE_URL"]
-SUPABASE_KEY    = os.environ["SUPABASE_KEY"]
-PINTEREST_TOKEN = os.environ["PINTEREST_TOKEN"]
+GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta"
@@ -34,27 +34,88 @@ SUPABASE_HEADERS = {
     "Prefer":        "return=representation"
 }
 
-# Amazon commission rates by category (hardcoded — rarely changes)
-# https://affiliate-program.amazon.com/help/node/topic/GRXPHT8U84RAYDXZ
+PINTEREST_API = "https://api.pinterest.com/v5"
+
+# Amazon Associates UK commission rates by category
+# Source: affiliate-program.amazon.co.uk/help/node/topic/GRXPHT8U84RAYDXZ
+# Last updated: April 2026
 COMMISSION_RATES = {
-    "luxury beauty":         10.0,
-    "beauty":                10.0,
-    "health personal care":  10.0,
-    "baby":                   4.5,
-    "kitchen":                4.5,
-    "pet products":           4.5,
-    "toys games":             3.0,
-    "home office":            3.0,
-    "furniture":              3.0,
-    "electronics":            3.0,
-    "sports outdoors":        3.0,
-    "clothing":               4.0,
-    "shoes":                  4.0,
-    "default":                3.0
+    # 6% — Fashion, Luxury, Accessories
+    "amazon fashion":            6.0,
+    "clothing":                  6.0,
+    "clothing & accessories":    6.0,
+    "fashion":                   6.0,
+    "luxury":                    6.0,
+    "luxury beauty":             6.0,
+    "luxury stores beauty":      6.0,
+    "luxury stores fashion":     6.0,
+    "shoes":                     6.0,
+    "handbags":                  6.0,
+    "wallets":                   6.0,
+    "watches":                   6.0,
+ 
+    # 5% — Home, Kitchen, Books, Music, Automotive, Tools
+    "amazon instant video":      5.0,
+    "audible":                   5.0,
+    "audiobooks":                5.0,
+    "automotive":                5.0,
+    "books":                     5.0,
+    "digital music":             5.0,
+    "furniture":                 5.0,
+    "handmade":                  5.0,
+    "home":                      5.0,
+    "home office":               5.0,
+    "home improvement":          5.0,
+    "jewellery":                 5.0,
+    "jewelry":                   5.0,
+    "kindle books":              5.0,
+    "kitchen":                   5.0,
+    "kitchen & dining":          5.0,
+    "music":                     5.0,
+    "power tools":               5.0,
+    "hand tools":                5.0,
+    "tools":                     5.0,
+ 
+    # 4% — Beauty, Sports, Luggage
+    "beauty":                    4.0,
+    "luggage":                   4.0,
+    "personal care appliances":  4.0,
+    "sports":                    4.0,
+    "sports & fitness":          4.0,
+    "fitness":                   4.0,
+    "outdoors":                  4.0,
+ 
+    # 2.5% — Electronics, Appliances
+    "appliances":                2.5,
+    "fire tv":                   2.5,
+    "mobile electronics":        2.5,
+    "electronics":               2.5,
+    "headphones":                2.5,
+    "pc":                        2.5,
+    "computers":                 2.5,
+ 
+    # 1% — Grocery, Gaming, Fresh
+    "amazon fresh":              1.0,
+    "grocery":                   1.0,
+    "pantry":                    1.0,
+    "video games":               1.0,
+    "video game consoles":       1.0,
+    "gaming":                    1.0,
+ 
+    # 0% — Gift cards, wine, apps
+    "gift cards":                0.0,
+    "gift card":                 0.0,
+    "kindle unlimited":          0.0,
+    "wine":                      0.0,
+    "android apps":              0.0,
+    "coach":                     0.0,
+ 
+    # Default for all other categories (e.g. toys, baby, pets, office)
+    "default":                   3.0,
 }
 
 
-# ── 1. Load active products from Supabase ────────────────────
+# ── 1. Load active products ──────────────────────────────────
 
 def load_products():
     resp = requests.get(
@@ -71,12 +132,7 @@ def load_products():
 # ── 2. Amazon BSR scraper ────────────────────────────────────
 
 def get_amazon_bsr(asin):
-    """
-    Scrape BSR from Amazon product page.
-    Returns integer rank or None if not found.
-    Uses a browser-like User-Agent to avoid blocks.
-    """
-    url = f"https://www.amazon.co.uk/dp/{asin}"
+    url     = f"https://www.amazon.co.uk/dp/{asin}"
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -91,39 +147,29 @@ def get_amazon_bsr(asin):
         if resp.status_code != 200:
             print(f"  BSR: Amazon returned {resp.status_code} for {asin}")
             return None
-
-        # Look for BSR in page — Amazon formats it as "#1,234 in Category"
         match = re.search(r"#([\d,]+)\s+in\s+[\w\s]+(?:Best Sellers|Rank)", resp.text)
         if not match:
-            # Fallback pattern
             match = re.search(r"Best Sellers Rank.*?#([\d,]+)", resp.text, re.DOTALL)
         if match:
             rank = int(match.group(1).replace(",", ""))
             print(f"  BSR: #{rank:,}")
             return rank
-
-        print(f"  BSR: not found in page for {asin}")
+        print(f"  BSR: not found for {asin}")
         return None
     except Exception as e:
-        print(f"  BSR: error — {e}")
+        print(f"  BSR error: {e}")
         return None
 
 
 # ── 3. Google Trends ─────────────────────────────────────────
 
 def get_trend_score(product_name):
-    """
-    Returns (score 0-100, direction string).
-    Score = average interest over past 7 days.
-    Direction = rising/stable/falling based on trend.
-    """
     try:
         from pytrends.request import TrendReq
-        pt = TrendReq(hl="en-GB", tz=0, timeout=(10, 25))
-        # Use first 3 words of product name as keyword
+        pt      = TrendReq(hl="en-GB", tz=0, timeout=(10, 25))
         keyword = " ".join(product_name.split()[:3])
         pt.build_payload([keyword], timeframe="now 7-d", geo="GB")
-        data = pt.interest_over_time()
+        data    = pt.interest_over_time()
 
         if data.empty:
             print(f"  Trends: no data for '{keyword}'")
@@ -131,8 +177,6 @@ def get_trend_score(product_name):
 
         values = data[keyword].tolist()
         avg    = sum(values) / len(values)
-
-        # Determine direction from first half vs second half
         mid    = len(values) // 2
         first  = sum(values[:mid]) / max(mid, 1)
         second = sum(values[mid:]) / max(len(values) - mid, 1)
@@ -148,19 +192,18 @@ def get_trend_score(product_name):
         return round(avg, 1), direction
 
     except Exception as e:
-        print(f"  Trends: error — {e}")
+        print(f"  Trends error: {e}")
         return 50, "stable"
 
 
 # ── 4. Pinterest pin saves for this product ──────────────────
 
-def get_pinterest_saves(product_id):
+def get_pinterest_saves(product_id, auth: PinterestAuth):
     """
     Sum saves across all posted pins for this product.
-    Uses Pinterest Analytics API.
+    Uses shared PinterestAuth — auto-refreshes token on 401.
     """
     try:
-        # Get all posted pins for this product
         resp = requests.get(
             f"{SUPABASE_URL}/rest/v1/pins",
             headers=SUPABASE_HEADERS,
@@ -183,40 +226,37 @@ def get_pinterest_saves(product_id):
             if not pid:
                 continue
             try:
-                r = requests.get(
-                    f"https://api.pinterest.com/v5/pins/{pid}",
-                    headers={"Authorization": f"Bearer {PINTEREST_TOKEN}"},
+                # Use auth.get() — handles 401 + token refresh automatically
+                r = auth.get(
+                    f"{PINTEREST_API}/pins/{pid}",
                     params={"pin_metrics": "true"}
                 )
                 if r.ok:
-                    metrics = r.json().get("pin_metrics", {})
-                    # Saves are under "lifetime_metrics"
-                    saves = metrics.get("lifetime_metrics", {}).get("save", 0)
+                    metrics     = r.json().get("pin_metrics", {})
+                    saves       = metrics.get("lifetime_metrics", {}).get("save", 0)
                     total_saves += saves
-                time.sleep(0.3)  # gentle rate limiting
-            except Exception:
-                pass
+                else:
+                    print(f"  Could not fetch metrics for pin {pid}: {r.status_code}")
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"  Error fetching pin {pid}: {e}")
 
-        print(f"  Pinterest saves: {total_saves} total across {len(pins)} pins")
+        print(f"  Pinterest saves: {total_saves} across {len(pins)} pins")
         return total_saves
 
     except Exception as e:
-        print(f"  Pinterest saves: error — {e}")
+        print(f"  Pinterest saves error: {e}")
         return 0
 
 
 # ── 5. Gemini scoring engine ─────────────────────────────────
 
 def score_products_with_gemini(products_data):
-    """
-    Send all product signals to Gemini and get back scores.
-    Returns list of {asin, score, reason} dicts.
-    """
     prompt = f"""You are an Amazon affiliate marketing analyst.
 Score each product 0-100 for Pinterest promotion potential THIS WEEK.
 
 Scoring weights:
-- Amazon BSR rank      30% (lower rank = more popular = higher score)
+- Amazon BSR rank      30% (lower = more popular = higher score)
 - Google Trends score  25% (higher interest = higher score)
 - Trend direction      15% (rising=+15, stable=+0, falling=-15)
 - Pinterest saves      20% (more saves = better conversion proof)
@@ -252,20 +292,20 @@ Return ONLY valid JSON array, no markdown:
     return json.loads(text)
 
 
-# ── 6. Save scores back to Supabase ─────────────────────────
+# ── 6. Save scores to Supabase ───────────────────────────────
 
 def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves):
     resp = requests.patch(
         f"{SUPABASE_URL}/rest/v1/products?id=eq.{product_id}",
         headers=SUPABASE_HEADERS,
         json={
-            "score":          score,
-            "score_reason":   reason,
-            "bsr_rank":       bsr,
-            "trend_score":    trend_score,
-            "trend_dir":      trend_dir,
+            "score":           score,
+            "score_reason":    reason,
+            "bsr_rank":        bsr,
+            "trend_score":     trend_score,
+            "trend_dir":       trend_dir,
             "pinterest_saves": saves,
-            "last_scored_at": datetime.utcnow().isoformat()
+            "last_scored_at":  datetime.utcnow().isoformat()
         }
     )
     resp.raise_for_status()
@@ -275,24 +315,27 @@ def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(f"Product scoring run — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"Product scoring — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
     print("=" * 60)
 
     products = load_products()
     if not products:
-        print("No active products to score. Add products to the table first.")
+        print("No active products. Add products to the table first.")
         exit(0)
 
-    # Collect signals for each product
+    # Single shared auth instance — token refreshed once if needed,
+    # reused across all Pinterest API calls in this run
+    auth = PinterestAuth()
+
     products_data = []
     signals       = {}
 
     for p in products:
-        print(f"\nFetching signals for: {p['name']} ({p['asin']})")
+        print(f"\n── {p['name']} ({p['asin']}) ──")
 
         bsr                    = get_amazon_bsr(p["asin"])
         trend_score, trend_dir = get_trend_score(p["name"])
-        saves                  = get_pinterest_saves(p["id"])
+        saves                  = get_pinterest_saves(p["id"], auth)
         commission             = p.get("commission") or COMMISSION_RATES.get(
                                    p.get("category", "").lower(),
                                    COMMISSION_RATES["default"]
@@ -318,14 +361,14 @@ if __name__ == "__main__":
             "commission":  commission
         })
 
-        time.sleep(2)  # be polite between requests
+        time.sleep(2)
 
     # Score with Gemini
     print(f"\nScoring {len(products_data)} products with Gemini...")
     scores = score_products_with_gemini(products_data)
 
-    # Save scores to Supabase
-    print("\nSaving scores to Supabase...")
+    # Save to Supabase
+    print("\nSaving scores...")
     for s in scores:
         asin = s["asin"]
         sig  = signals.get(asin, {})
@@ -338,13 +381,13 @@ if __name__ == "__main__":
             trend_dir   = sig.get("trend_dir", "stable"),
             saves       = sig.get("saves", 0)
         )
-        print(f"  {asin} → score={s['score']} — {s['reason']}")
+        print(f"  {asin} → {s['score']}/100 — {s['reason']}")
 
-    # Print winner
-    top = max(scores, key=lambda x: x["score"])
+    top         = max(scores, key=lambda x: x["score"])
     top_product = next(p for p in products if p["asin"] == top["asin"])
+
     print(f"\n{'='*60}")
     print(f"TOP PRODUCT THIS WEEK: {top_product['name']}")
     print(f"Score: {top['score']}/100 — {top['reason']}")
     print(f"{'='*60}")
-    print("\nDone. generate_pins.py will use this product next run.")
+    print("Done. generate_pins.py will promote this product next run.")

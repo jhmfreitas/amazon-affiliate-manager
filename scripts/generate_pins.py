@@ -20,10 +20,12 @@ SUPABASE_URL    = os.environ["SUPABASE_URL"]
 SUPABASE_KEY    = os.environ["SUPABASE_KEY"]
 PEXELS_KEY      = os.environ["PEXELS_API_KEY"]
 
-# Amazon Creators API
+# Amazon Creators API credentials
+# Get these from: affiliate-program.amazon.co.uk/creatorsapi
 AMAZON_CRED_ID  = os.environ["AMAZON_CREDENTIAL_ID"]
 AMAZON_CRED_SEC = os.environ["AMAZON_CREDENTIAL_SECRET"]
 AMAZON_TAG      = os.environ["AMAZON_ASSOCIATE_TAG"]
+AMAZON_COUNTRY  = os.environ.get("AMAZON_COUNTRY", "co.uk")  # "com" for US
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta"
@@ -38,9 +40,9 @@ SUPABASE_HEADERS = {
 }
 
 # ── Config ───────────────────────────────────────────────────
-SLOTS            = 7    # pins to generate per run (1 per day for a week)
-CANDIDATES       = 10   # candidates generated per slot
-KEEP_TOP         = 3    # top N candidates kept per slot
+SLOTS      = 7    # pins to generate per run (1 per day for a week)
+CANDIDATES = 10   # candidates generated per slot
+KEEP_TOP   = 3    # top N candidates kept per slot
 
 
 # ── 1. Get top product ───────────────────────────────────────
@@ -59,7 +61,10 @@ def get_top_product():
     resp.raise_for_status()
     products = resp.json()
     if not products:
-        raise ValueError("No active products found. Add products to the table first.")
+        raise ValueError(
+            "No active products found. "
+            "Add products to the Supabase products table first."
+        )
     product = products[0]
     print(f"Top product: {product['name']} (score={product['score']})")
     return product
@@ -69,33 +74,63 @@ def get_top_product():
 
 def get_affiliate_url(asin, fallback_url=None):
     """
-    Get affiliate URL from Amazon Creators API.
-    Falls back to stored URL if API is unavailable
-    (e.g. if monthly sales drop below threshold).
+    Get affiliate URL from Amazon Creators API (python-amazon-paapi v6+).
+
+    Uses the new amazon_creatorsapi module which replaces the old
+    amazon_paapi module as of version 6.0.0.
+
+    Falls back to the stored URL in the products table if the API
+    is unavailable (e.g. monthly sales drop below the threshold).
     """
     try:
-        from amazon_paapi import AmazonApi
-        amazon = AmazonApi(
-            AMAZON_CRED_ID,
-            AMAZON_CRED_SEC,
-            AMAZON_TAG,
-            "co.uk"   # change to "com" for US Associates account
+        from amazon_creatorsapi import AmazonCreatorsApi
+        from amazon_creatorsapi.models import GetItemsResource
+        from amazon_creatorsapi.errors import (
+            AmazonCreatorsApiError,
+            ItemsNotFoundError,
+            TooManyRequestsError,
+            AssociateValidationError
         )
-        result = amazon.get_items(asin)
-        if result and result.items_result and result.items_result.items:
-            url = result.items_result.items[0].detail_page_url
-            print(f"Affiliate URL from Creators API: {url[:60]}...")
+
+        amazon = AmazonCreatorsApi(
+            credential_id     = AMAZON_CRED_ID,
+            credential_secret = AMAZON_CRED_SEC,
+            version           = "2.2",
+            tag               = AMAZON_TAG,
+            country           = AMAZON_COUNTRY
+        )
+
+        items = amazon.get_items(
+            [asin],
+            resources=[GetItemsResource.ITEMINFO_TITLE]
+        )
+
+        if items and items[0].detail_page_url:
+            url = items[0].detail_page_url
+            print(f"  Affiliate URL from Creators API: {url[:70]}...")
             return url
+        else:
+            print(f"  Creators API returned no URL for {asin}.")
+
+    except ImportError:
+        print("  amazon_creatorsapi not installed — run: pip install python-amazon-paapi")
+    except ItemsNotFoundError:
+        print(f"  ASIN {asin} not found in Amazon catalogue.")
+    except AssociateValidationError:
+        print(f"  Associate account not validated — check your credentials and tag.")
+    except TooManyRequestsError:
+        print(f"  Creators API rate limit hit — using fallback URL.")
+    except AmazonCreatorsApiError as e:
+        print(f"  Creators API error: {e} — using fallback URL.")
     except Exception as e:
-        print(f"Creators API unavailable: {e}")
-        print("Falling back to stored affiliate URL.")
+        print(f"  Unexpected error from Creators API: {e} — using fallback URL.")
 
     # Fallback — use URL stored in products table
     if fallback_url:
-        print(f"Using stored affiliate URL.")
+        print(f"  Using stored affiliate URL from products table.")
         return fallback_url
 
-    print("Warning: no affiliate URL available for this product.")
+    print(f"  Warning: no affiliate URL available. Pin will have no link.")
     return None
 
 
@@ -150,8 +185,8 @@ Score 1-10 on:
 Candidates:
 {json.dumps(candidates, indent=2)}
 
-Return ONLY a JSON array in the same order:
-[{{"score": 8.5, "reason": "strong pain point, good SEO"}}]"""
+Return ONLY a JSON array in the same order, no markdown:
+[{{"score": 8.5, "reason": "one sentence explaining the score"}}]"""
 
     resp = requests.post(
         GEMINI_URL,
@@ -175,8 +210,12 @@ def get_pexels_image(query):
     resp = requests.get(
         "https://api.pexels.com/v1/search",
         headers={"Authorization": PEXELS_KEY},
-        params={"query": query, "per_page": 15,
-                "orientation": "portrait", "size": "large"}
+        params={
+            "query":       query,
+            "per_page":    15,
+            "orientation": "portrait",
+            "size":        "large"
+        }
     )
     resp.raise_for_status()
     photos = resp.json().get("photos", [])
@@ -204,7 +243,7 @@ def upload_image(pexels_url):
     )
 
     if not upload_resp.ok:
-        print(f"Storage error {upload_resp.status_code}: {upload_resp.text}")
+        print(f"  Storage error {upload_resp.status_code}: {upload_resp.text}")
         upload_resp.raise_for_status()
 
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{file_name}"
@@ -221,9 +260,9 @@ def save_pin(pin, product, affiliate_url):
             "description":   pin["description"],
             "hashtags":      pin["hashtags"],
             "pexels_search": pin["pexels_search"],
-            "hook_type":     pin["hook_type"],
-            "score":         pin["score"],
-            "score_reason":  pin["score_reason"],
+            "hook_type":     pin.get("hook_type", ""),
+            "score":         pin.get("score", 0),
+            "score_reason":  pin.get("score_reason", ""),
             "image_url":     pin["image_url"],
             "photographer":  pin.get("photographer", ""),
             "link_url":      affiliate_url or "",
@@ -240,26 +279,26 @@ def save_pin(pin, product, affiliate_url):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(f"Pin generation run — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"Pin generation — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
     print("=" * 60)
 
-    # 1. Get top product
+    # 1. Get top scored product
     product = get_top_product()
 
-    # 2. Get affiliate URL
+    # 2. Get affiliate URL via Creators API (with fallback)
+    print(f"\nGetting affiliate URL for ASIN: {product['asin']}")
     affiliate_url = get_affiliate_url(
         asin         = product["asin"],
         fallback_url = product.get("affiliate_url")
     )
 
-    print(f"\nGenerating {SLOTS} pin slots × {CANDIDATES} candidates = "
-          f"{SLOTS * CANDIDATES} total Gemini calls")
-    print(f"Keeping top {KEEP_TOP} per slot = up to {SLOTS * KEEP_TOP} pins\n")
+    print(f"\nGenerating {SLOTS} slots × {CANDIDATES} candidates, "
+          f"keeping top {KEEP_TOP} each\n")
 
     all_saved = []
 
     for slot in range(SLOTS):
-        print(f"Slot {slot + 1}/{SLOTS} — {product['name']}")
+        print(f"── Slot {slot + 1}/{SLOTS} ──")
 
         # 3. Generate candidates
         print(f"  Generating {CANDIDATES} candidates...")
@@ -281,35 +320,40 @@ if __name__ == "__main__":
 
         # 5. Save each top candidate
         for i, pin in enumerate(top):
-            print(f"  Candidate {i+1} (score={pin['score']}) — {pin['title'][:50]}...")
+            print(f"  [{i+1}/{KEEP_TOP}] score={pin['score']} "
+                  f"— {pin['title'][:55]}...")
 
-            # Get image
+            # Get image from Pexels
             pexels_url, photographer = get_pexels_image(pin["pexels_search"])
             if not pexels_url:
-                print(f"  No image for '{pin['pexels_search']}' — skipping")
+                print(f"  No image found for '{pin['pexels_search']}' — skipping")
                 continue
 
             # Upload to Supabase Storage
-            print(f"  Uploading image...")
+            print(f"  Uploading image to Supabase...")
             try:
-                image_url = upload_image(pexels_url)
+                pin["image_url"]    = upload_image(pexels_url)
+                pin["photographer"] = photographer
             except Exception as e:
-                print(f"  Image upload failed: {e} — skipping")
+                print(f"  Upload failed: {e} — skipping")
                 continue
 
-            pin["image_url"]    = image_url
-            pin["photographer"] = photographer
+            # Save pin row
+            try:
+                saved = save_pin(pin, product, affiliate_url)
+                all_saved.append(saved)
+                print(f"  Saved pin id={saved['id']}")
+            except Exception as e:
+                print(f"  Save failed: {e} — skipping")
+                continue
 
-            # Save pin
-            saved = save_pin(pin, product, affiliate_url)
-            all_saved.append(saved)
-            print(f"  Saved pin id={saved['id']}")
-
-            time.sleep(0.5)  # gentle rate limiting
+            time.sleep(0.5)
 
         time.sleep(2)
 
     print(f"\n{'='*60}")
-    print(f"Done. {len(all_saved)} pins saved to Supabase.")
-    print(f"Go to your review app to approve them.")
+    print(f"Done. {len(all_saved)} pins saved.")
+    print(f"Product: {product['name']}")
+    print(f"Affiliate link: {affiliate_url or '(none)'}")
+    print(f"Go to your review app to approve pins.")
     print(f"{'='*60}")
