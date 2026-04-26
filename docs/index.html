@@ -1156,9 +1156,18 @@ function renderProducts() {
     const trendIcon = p.trend_dir === 'rising'  ? '↑'
                     : p.trend_dir === 'falling' ? '↓'
                     : '→';
-    const bsr = p.bsr_rank
-      ? '#' + p.bsr_rank.toLocaleString()
-      : '–';
+    
+    // Calculate Payout
+    const price = p.price || 0;
+    const comm = p.commission || 0;
+    const payout = (price * comm) / 100;
+    
+    // Format deltas
+    const tDelta = (p.trend_delta || 0).toFixed(1);
+    const tDeltaStr = p.trend_delta > 0 ? '+' + tDelta : tDelta;
+    
+    const sDelta = p.save_delta || 0;
+    const sDeltaStr = sDelta > 0 ? '+' + sDelta : sDelta;
     const lastScored = p.last_scored_at
       ? new Date(p.last_scored_at).toLocaleDateString('en-GB', {day:'numeric',month:'short'})
       : 'never';
@@ -1189,19 +1198,19 @@ function renderProducts() {
       <!-- Data signals grid -->
       <div class="product-signals">
         <div class="signal">
-          <div class="signal-label">BSR Rank</div>
-          <div class="signal-val">${bsr}</div>
-          <div class="signal-sub">Amazon rank</div>
+          <div class="signal-label">Price & Payout</div>
+          <div class="signal-val">£${price.toFixed(2)}</div>
+          <div class="signal-sub">£${payout.toFixed(2)} comm.</div>
         </div>
         <div class="signal">
           <div class="signal-label">Trend</div>
           <div class="signal-val ${trendCls}">${trendIcon} ${p.trend_score || 0}</div>
-          <div class="signal-sub">${p.trend_dir || 'stable'}</div>
+          <div class="signal-sub">Δ${tDeltaStr}</div>
         </div>
         <div class="signal">
           <div class="signal-label">Pinterest saves</div>
           <div class="signal-val">${(p.pinterest_saves || 0).toLocaleString()}</div>
-          <div class="signal-sub">on your pins</div>
+          <div class="signal-sub">Δ${sDeltaStr}</div>
         </div>
         <div class="signal">
           <div class="signal-label">Commission</div>
