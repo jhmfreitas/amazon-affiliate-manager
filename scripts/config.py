@@ -37,20 +37,66 @@ SUPABASE_HEADERS = {
 # ── Amazon commission rates (UK) ────────────────────────────
 # Source: affiliate-program.amazon.co.uk/help/node/topic/GRXPHT8U84RAYDXZ
 COMMISSION_RATES = {
-    "fashion":        8.0,
-    "luxury_beauty": 10.0,
-    "beauty":         6.0,
-    "home_kitchen":   7.0,
-    "kitchen":        7.0,
-    "sports":         5.0,
-    "baby":           5.0,
-    "garden":         7.0,
-    "electronics":    3.0,
-    "toys":           3.0,
+    # 6.0%
+    "fashion":        6.0,  # Custom key for discover_products
+    "clothing":       6.0,  # Clothing & Accessories
+    "shoes":          6.0,  # Shoes, Handbags, Wallets
+    "watches":        6.0,
+    "luxury":         6.0,
+    "luxury_beauty":  6.0,  # Luxury stores beauty
+
+    # 5.0%
+    "amazon_instant_video": 5.0,
+    "audible":        5.0,
+    "automotive":     5.0,
+    "books":          5.0,
+    "digital_music":  5.0,
+    "furniture":      5.0,
+    "handmade":       5.0,
+    "home":           5.0,
+    "home_improvement": 5.0,
+    "garden":         5.0,  # Often grouped with Home Improvement
+    "jewellery":      5.0,
+    "kindle_books":   5.0,
+    "home_kitchen":   5.0,  # Custom key
+    "kitchen":        5.0,  # Custom key
+    "kitchen_dining": 5.0,
+    "music":          5.0,
+    "tools":          5.0,  # Power & Hand Tools
+
+    # 4.0%
+    "beauty":         4.0,
+    "luggage":        4.0,
+    "personal_care":  4.0,  # Personal Care Appliances
+    "sports":         4.0,  # Custom key
+    "sports_fitness": 4.0,
+
+    # 2.5%
+    "appliances":     2.5,
+    "fire_tv":        2.5,
+    "mobile_electronics": 2.5,
+
+    # 1.0%
+    "amazon_fresh":   1.0,
+    "grocery":        1.0,
+    "pantry":         1.0,
+    "video_games":    1.0,
+    "video_game_consoles": 1.0,
+
+    # 0.0%
+    "gift_cards":     0.0,
+    "android_apps":   0.0,
+    "kindle_unlimited": 0.0,
+    "wine":           0.0,
+    
+    # Defaults
+    "baby":           3.0,  # All Other Categories
+    "electronics":    3.0,  # All Other Categories
+    "toys":           3.0,  # All Other Categories
 }
 
-# Default for unknown categories
-DEFAULT_COMMISSION = 4.0
+# Default for unknown categories ("All Other Categories")
+DEFAULT_COMMISSION = 3.0
 
 # Minimum product price (£) — skip cheap items
 MIN_PRICE = 15.0

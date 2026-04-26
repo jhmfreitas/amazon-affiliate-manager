@@ -189,6 +189,36 @@ def backfill_prices():
     return updated
 
 
+# ── SYNC COMMISSIONS FOR EXISTING PRODUCTS ─────────
+def sync_commissions():
+    """
+    Ensure all existing active products have the correct commission rate
+    based on the current config.py rates.
+    """
+    products = supabase_get("products", params={
+        "active": "eq.true",
+        "select": "id,asin,name,category,commission"
+    })
+
+    if not products:
+        return 0
+
+    updated = 0
+    for p in products:
+        expected_commission = get_commission(p["category"])
+        
+        # If the DB commission doesn't match our config, update it
+        if p.get("commission") != expected_commission:
+            try:
+                supabase_patch(f"products?id=eq.{p['id']}", {"commission": expected_commission})
+                log.info(f"  Updated commission for {p['asin']} ({p['category']}): {p.get('commission')} → {expected_commission}%")
+                updated += 1
+            except Exception as e:
+                log.warning(f"  Failed to update commission for {p['asin']}: {e}")
+
+    return updated
+
+
 # ── SCRAPE BESTSELLER PAGE ─────────────────────────
 def scrape_category(url, category):
     log.info(f"Scraping: {url}")
@@ -406,4 +436,7 @@ if __name__ == "__main__":
     # Backfill prices for any existing products that have null price
     backfilled = backfill_prices()
 
-    log.info(f"=== DONE — {total_new} new products added, {backfilled} prices backfilled ===")
+    # Sync commissions for existing products
+    commissions_synced = sync_commissions()
+
+    log.info(f"=== DONE — {total_new} new products, {backfilled} prices backfilled, {commissions_synced} commissions synced ===")
