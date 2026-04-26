@@ -1,5 +1,5 @@
 """
-score_products_v2.py
+score_products_v3.py
 Deterministic scoring engine (no LLM)
 
 Focus:
@@ -7,7 +7,6 @@ Focus:
 - Momentum (delta signals)
 - Proof (Pinterest saves)
 - Monetization (commission)
-- Weak signal (BSR fallback)
 """
 
 import re, time, math, requests
@@ -25,25 +24,26 @@ def load_products():
 # ── GOOGLE TRENDS KEYWORD ENGINE ────────────────────
 def extract_trend_candidates(product_name):
     name = product_name.lower()
-
-    stopwords = {
-        "pack","set","bundle","with","logo","waistband",
-        "for","and","the","a","of","mens","men","womens","women"
-    }
-
-    words = [w for w in re.split(r"\W+", name) if w and w not in stopwords]
-
-    if len(words) < 2:
-        return [product_name]
-
-    brand = " ".join(words[:2])
-    product = words[-1]
-
-    return list(set([
-        f"{brand} {product}",
-        brand,
-        product
-    ]))
+    stopwords = {"pack","set","bundle","with","for","and","the","a","of","mens","men","womens","women","in"}
+    
+    # Remove everything after a pipe, dash, or comma which usually denotes fluff
+    clean_name = re.split(r'[,|\-]', name)[0]
+    words = [w for w in re.split(r"\W+", clean_name) if w and w not in stopwords]
+    
+    if len(words) == 0:
+        return [product_name[:30]]
+    if len(words) == 1:
+        return [words[0]]
+        
+    candidates = []
+    # e.g., "Under Armour Charged"
+    if len(words) >= 3:
+        candidates.append(" ".join(words[:3]))
+    # e.g., "Under Armour"
+    if len(words) >= 2:
+        candidates.append(" ".join(words[:2]))
+        
+    return candidates
 
 def get_trend_score(product_name):
     try:
@@ -116,6 +116,9 @@ def get_pinterest_saves(product_id, auth):
 
 # ── NORMALIZATION ──────────────────────────────────
 def normalize_delta(delta, scale=20):
+    if delta is None:
+        delta = 0.0
+    delta = float(delta)
     return max(-10, min(10, delta / scale * 10))
 
 def normalize_saves(saves):
@@ -123,11 +126,11 @@ def normalize_saves(saves):
 
 # ── SCORING ENGINE ─────────────────────────────────
 def compute_score(p):
-    trend = p["trend_score"]
-    saves = p["pinterest_saves"]
+    trend = float(p.get("trend_score") or 0.0)
+    saves = int(p.get("pinterest_saves") or 0)
 
-    trend_delta = normalize_delta(p["trend_delta"])
-    save_delta  = normalize_delta(p["save_delta"])
+    trend_delta = normalize_delta(p.get("trend_delta"))
+    save_delta  = normalize_delta(p.get("save_delta"))
 
     direction_bonus = {
         "rising": 10,
@@ -139,20 +142,42 @@ def compute_score(p):
     base = (trend * 0.45) + (saves * 0.35)
 
     # Momentum bonus/penalty (can be negative)
+    # Removing the *0.10 so delta points actually matter!
     momentum = (
         direction_bonus.get(p["trend_dir"], 0) +
-        (trend_delta * 0.10) +
-        (save_delta * 0.10)
+        trend_delta +
+        save_delta
     )
 
-    # Commission bonus (higher commission = more points)
-    # e.g., 6% commission = +18 points, 3% = +9 points
-    comm_bonus = p.get("commission", 3.0) * 3.0
+    # Commission bonus (Cash Payout £)
+    # Expected payout = Price * Commission%
+    raw_price = p.get("price")
+    price = float(raw_price) if raw_price is not None else 15.0
+    
+    raw_comm = p.get("commission")
+    commission_pct = float(raw_comm) if raw_comm is not None else 3.0
+    
+    payout = price * (commission_pct / 100.0)
+    
+    # Scale payout to a reasonable bonus (e.g. £1 payout = ~3 points, £10 = ~30 points)
+    # Capped at 40 points so a £1000 item doesn't break the scale completely
+    comm_bonus = min(40.0, payout * 3.0)
 
-    score = base + momentum + comm_bonus
+    # Freshness Bonus (Cold Start Fix)
+    # Give new products +15 points to compete with older products that have saves
+    freshness_bonus = 0
+    if p.get("created_at"):
+        try:
+            created = datetime.fromisoformat(p["created_at"].replace("Z", "+00:00"))
+            if (datetime.now(timezone.utc) - created).days <= 7:
+                freshness_bonus = 15.0
+        except Exception:
+            pass
 
-    # Prevent negative scores
-    return round(max(0.0, score), 2)
+    score = base + momentum + comm_bonus + freshness_bonus
+
+    # Ensure score stays strictly within a 0-100 scale
+    return round(min(100.0, max(0.0, score)), 2)
 
 # ── SAVE ───────────────────────────────────────────
 def save_score(product_id, data):
@@ -160,7 +185,7 @@ def save_score(product_id, data):
 
 # ── MAIN ───────────────────────────────────────────
 if __name__ == "__main__":
-    log.info("=== SCORING ENGINE V2 ===")
+    log.info("=== SCORING ENGINE V3 ===")
 
     products = load_products()
     auth = PinterestAuth()
