@@ -16,7 +16,7 @@ import os, re, json, time, requests
 from bs4 import BeautifulSoup
 from config import (
     log, random_headers, get_commission, MIN_PRICE,
-    supabase_get, supabase_post
+    supabase_get, supabase_post, supabase_patch, SUPABASE_HEADERS, SUPABASE_URL
 )
 
 # ── Gemini for niche/audience classification ──────
@@ -47,14 +47,31 @@ def get_existing_asins():
 # ── PARSE PRICE ────────────────────────────────────
 def parse_price(item):
     """Extract price from bestseller grid item. Returns float or None."""
-    # Try the price span (most common)
-    price_tag = item.select_one("span.a-price span.a-offscreen")
-    if price_tag:
-        match = re.search(r"[\d,.]+", price_tag.text)
-        if match:
-            return float(match.group().replace(",", ""))
+    # Amazon UK bestseller pages show price in these selectors:
+    #   span.a-color-price  →  "EUR€28.87" or "£28.87"
+    #   span._cDEzb_p13n-sc-price_3mJ9Z  →  same format
+    #   span.a-price span.a-offscreen  →  "£28.87" (product pages)
+    for selector in [
+        "span.a-color-price",
+        "span[class*='p13n-sc-price']",
+        "span.a-price span.a-offscreen",
+    ]:
+        price_tag = item.select_one(selector)
+        if price_tag:
+            raw = price_tag.text.strip()
+            # Extract numeric value regardless of currency prefix (EUR€, £, etc.)
+            match = re.search(r"([\d]+[.,]?\d*)", raw)
+            if match:
+                price_str = match.group(1).replace(",", "")
+                try:
+                    price = float(price_str)
+                    log.debug(f"    Price parsed: {raw!r} → £{price}")
+                    return price
+                except ValueError:
+                    log.debug(f"    Price parse failed: {raw!r}")
+                    continue
 
-    # Fallback: any element with price-like content
+    # Last fallback: whole + fraction spans (some layouts)
     price_whole = item.select_one("span.a-price-whole")
     price_frac = item.select_one("span.a-price-fraction")
     if price_whole:
@@ -65,7 +82,73 @@ def parse_price(item):
         except ValueError:
             pass
 
+    log.debug(f"    No price found in item")
     return None
+
+
+# ── FETCH PRICE FROM PRODUCT PAGE ──────────────────
+def fetch_price_from_page(asin):
+    """Fetch price directly from Amazon product page as fallback."""
+    try:
+        resp = requests.get(
+            f"https://www.amazon.co.uk/dp/{asin}",
+            headers=random_headers(),
+            timeout=10
+        )
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Product page price selectors
+        for selector in [
+            "span.a-price span.a-offscreen",
+            "#priceblock_ourprice",
+            "#priceblock_dealprice",
+            "span.a-color-price",
+            "span[class*='apexPriceToPay'] span.a-offscreen",
+        ]:
+            tag = soup.select_one(selector)
+            if tag:
+                match = re.search(r"([\d]+[.,]?\d*)", tag.text)
+                if match:
+                    return float(match.group(1).replace(",", ""))
+    except Exception as e:
+        log.warning(f"  Price page fetch failed for {asin}: {e}")
+    return None
+
+
+# ── BACKFILL PRICES FOR EXISTING PRODUCTS ──────────
+def backfill_prices():
+    """
+    Update existing products that have null price.
+    Fetches price from Amazon product page for each.
+    """
+    products = supabase_get("products", params={
+        "active": "eq.true",
+        "price": "is.null",
+        "select": "id,asin,name"
+    })
+
+    if not products:
+        log.info("No products need price backfill.")
+        return 0
+
+    log.info(f"Backfilling prices for {len(products)} products...")
+    updated = 0
+
+    for p in products:
+        price = fetch_price_from_page(p["asin"])
+        if price is not None:
+            try:
+                supabase_patch(f"products?id=eq.{p['id']}", {"price": price})
+                log.info(f"  {p['name'][:50]} → £{price:.2f}")
+                updated += 1
+            except Exception as e:
+                log.warning(f"  Failed to update {p['asin']}: {e}")
+        else:
+            log.warning(f"  Could not find price for {p['asin']}: {p['name'][:50]}")
+
+        time.sleep(1)  # be nice to Amazon
+
+    return updated
 
 
 # ── SCRAPE BESTSELLER PAGE ─────────────────────────
@@ -277,4 +360,7 @@ if __name__ == "__main__":
 
         time.sleep(2)
 
-    log.info(f"=== DONE — {total_new} new products added ===")
+    # Backfill prices for any existing products that have null price
+    backfilled = backfill_prices()
+
+    log.info(f"=== DONE — {total_new} new products added, {backfilled} prices backfilled ===")
