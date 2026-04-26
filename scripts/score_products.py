@@ -13,7 +13,7 @@ Focus:
 import re, time, math, requests
 from datetime import datetime, timezone
 from pinterest_auth import PinterestAuth
-from config import log, supabase_get, supabase_patch, random_headers
+from config import log, supabase_get, supabase_patch, random_headers, get_amazon_cookies
 
 # ── LOAD PRODUCTS ───────────────────────────────────
 def load_products():
@@ -28,6 +28,7 @@ def get_amazon_bsr(asin):
         html = requests.get(
             f"https://www.amazon.co.uk/dp/{asin}",
             headers=random_headers(),
+            cookies=get_amazon_cookies(),
             timeout=10
         ).text
 

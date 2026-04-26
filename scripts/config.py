@@ -72,6 +72,13 @@ def random_headers():
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
+def get_amazon_cookies():
+    """Return cookies that force Amazon to display GBP prices."""
+    return {
+        "i18n-prefs": "GBP",
+        "lc-acbuk": "en_GB"
+    }
+
 # ── Supabase helpers ───────────────────────────────────────
 
 def supabase_get(path, params=None):

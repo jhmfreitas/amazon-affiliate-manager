@@ -15,7 +15,7 @@ Improvements over v1:
 import os, re, json, time, requests
 from bs4 import BeautifulSoup
 from config import (
-    log, random_headers, get_commission, MIN_PRICE,
+    log, random_headers, get_amazon_cookies, get_commission, MIN_PRICE,
     supabase_get, supabase_post, supabase_patch, SUPABASE_HEADERS, SUPABASE_URL
 )
 
@@ -47,42 +47,47 @@ def get_existing_asins():
 # ── PARSE PRICE ────────────────────────────────────
 def parse_price(item):
     """Extract price from bestseller grid item. Returns float or None."""
-    # Amazon UK bestseller pages show price in these selectors:
-    #   span.a-color-price  →  "EUR€28.87" or "£28.87"
-    #   span._cDEzb_p13n-sc-price_3mJ9Z  →  same format
-    #   span.a-price span.a-offscreen  →  "£28.87" (product pages)
+    # Amazon UK bestseller pages show price in these selectors.
+    # Priority: specific data attrs > class-based > fallback
+    # Key: only extract prices marked as £ (GBP), not EUR€
+    
     for selector in [
-        "span.a-color-price",
-        "span[class*='p13n-sc-price']",
-        "span.a-price span.a-offscreen",
+        "span[data-a-color='price']",  # Data attributes are more stable
+        "span.a-price-whole",  # Whole price component
+        "span.a-color-price",  # Generic price color
+        "span[class*='p13n-sc-price']",  # Bestseller-specific
     ]:
         price_tag = item.select_one(selector)
         if price_tag:
             raw = price_tag.text.strip()
-            # Extract numeric value regardless of currency prefix (EUR€, £, etc.)
-            match = re.search(r"([\d]+[.,]?\d*)", raw)
-            if match:
-                price_str = match.group(1).replace(",", "")
-                try:
-                    price = float(price_str)
-                    log.debug(f"    Price parsed: {raw!r} → £{price}")
-                    return price
-                except ValueError:
-                    log.debug(f"    Price parse failed: {raw!r}")
-                    continue
+            # Only match if £ is present (ignore EUR€, etc)
+            if "£" in raw or re.search(r"^\d", raw):  # £ prefix or starts with digit
+                match = re.search(r"£?([\d]+[.,]?\d*)", raw)
+                if match:
+                    price_str = match.group(1).replace(",", "")
+                    try:
+                        price = float(price_str)
+                        if 0.5 < price < 5000:  # Sanity check
+                            log.debug(f"    Price parsed: {raw!r} → £{price}")
+                            return price
+                    except ValueError:
+                        continue
 
-    # Last fallback: whole + fraction spans (some layouts)
+    # Fallback: whole + fraction spans (some layouts split the price)
     price_whole = item.select_one("span.a-price-whole")
-    price_frac = item.select_one("span.a-price-fraction")
     if price_whole:
         whole = price_whole.text.strip().rstrip(".")
+        price_frac = item.select_one("span.a-price-fraction")
         frac = price_frac.text.strip() if price_frac else "00"
         try:
-            return float(f"{whole}.{frac}")
+            price = float(f"{whole}.{frac}")
+            if 0.5 < price < 5000:
+                log.debug(f"    Price parsed (whole+frac): £{price}")
+                return price
         except ValueError:
             pass
 
-    log.debug(f"    No price found in item")
+    log.debug(f"    No valid price found in item")
     return None
 
 
@@ -93,23 +98,31 @@ def fetch_price_from_page(asin):
         resp = requests.get(
             f"https://www.amazon.co.uk/dp/{asin}",
             headers=random_headers(),
+            cookies=get_amazon_cookies(),
             timeout=10
         )
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Product page price selectors
+        # Product page price selectors — ordered by specificity/reliability
         for selector in [
-            "span.a-price span.a-offscreen",
-            "#priceblock_ourprice",
-            "#priceblock_dealprice",
-            "span.a-color-price",
-            "span[class*='apexPriceToPay'] span.a-offscreen",
+            "span.a-price-whole",  # Direct whole price on product page
+            "span[data-a-color='price']",  # Data attribute selector (more reliable)
+            "#corePriceDisplay_desktop_feature_div span.a-offscreen",  # Core price display
+            "span.a-price span.a-offscreen",  # Secondary fallback
+            "span.a-color-price",  # Generic fallback
         ]:
             tag = soup.select_one(selector)
             if tag:
-                match = re.search(r"([\d]+[.,]?\d*)", tag.text)
+                text = tag.text.strip()
+                match = re.search(r"£([\d]+[.,]?\d*)", text)
                 if match:
-                    return float(match.group(1).replace(",", ""))
+                    price_str = match.group(1).replace(",", "")
+                    try:
+                        price = float(price_str)
+                        log.debug(f"  Page price found: {text!r} → £{price}")
+                        return price
+                    except ValueError:
+                        continue
     except Exception as e:
         log.warning(f"  Price page fetch failed for {asin}: {e}")
     return None
@@ -159,7 +172,7 @@ def scrape_category(url, category):
     resp = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            resp = requests.get(url, headers=random_headers(), timeout=15)
+            resp = requests.get(url, headers=random_headers(), cookies=get_amazon_cookies(), timeout=15)
             resp.raise_for_status()
             break
         except requests.RequestException as e:
