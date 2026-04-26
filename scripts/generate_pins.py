@@ -137,10 +137,7 @@ def get_affiliate_url(asin, fallback_url=None):
             country           = Country.UK
         )
 
-        items = amazon.get_items(
-            [asin],
-            resources=[GetItemsResource.ITEMINFO_TITLE]
-        )
+        items = amazon.get_items([asin])
 
         if items and items[0].detail_page_url:
             url = items[0].detail_page_url
