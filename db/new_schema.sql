@@ -59,5 +59,12 @@ insert into products (asin, name, category, niche, audience, commission) values
   ('B07K1RZWMC', 'Autonomous SmartDesk Pro',   'home office', 'standing desk', 'remote workers, entrepreneurs', 3.00),
   ('B09B8YWXDF', 'Logitech MX Master 3S Mouse','home office', 'desk setup',    'remote workers, programmers', 3.00);
 
+-- ─────────────────────────────────────────────────────────────
+-- Add columns for updated pipeline (run once)
+-- ─────────────────────────────────────────────────────────────
+alter table products add column if not exists price        numeric(8,2);
+alter table products add column if not exists trend_delta  numeric(6,2) default 0;
+alter table products add column if not exists save_delta   int default 0;
+
 -- Verify
-select id, asin, name, score, active from products;
+select id, asin, name, score, price, commission, active from products;

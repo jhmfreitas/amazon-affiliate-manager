@@ -3,71 +3,105 @@ generate_pins.py
 ────────────────
 Runs weekly (Monday 9am UTC, after score_products.py).
 
-1. Reads top-scored active product from Supabase
+1. Reads top 3 scored active products from Supabase
 2. Gets affiliate URL via Amazon Creators API (auto-generated)
-3. Generates 10 pin candidates per slot with Gemini
-4. Scores candidates — keeps top 3 per slot
-5. Downloads image from Pexels → uploads to Supabase Storage
-6. Saves all pins to Supabase with link_url and product_id
+3. Distributes 7 pin slots across products (weighted by score)
+4. Generates 10 pin candidates per slot with Gemini
+5. Scores candidates — keeps top 3 per slot
+6. Downloads image from Pexels → uploads to Supabase Storage
+7. Saves all pins to Supabase with link_url and product_id
+
+Improvements over v1:
+- Multi-product rotation (top 3, not just 1)
+- Score-weighted slot distribution
+- Skips products already pinned this week
+- Uses shared config
 """
 
 import os, json, random, uuid, time, requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from config import log, supabase_get, supabase_post, SUPABASE_URL, SUPABASE_KEY
 
 # ── Secrets ──────────────────────────────────────────────────
 GEMINI_KEY      = os.environ["GEMINI_API_KEY"]
-SUPABASE_URL    = os.environ["SUPABASE_URL"]
-SUPABASE_KEY    = os.environ["SUPABASE_KEY"]
 PEXELS_KEY      = os.environ["PEXELS_API_KEY"]
 
 # Amazon Creators API credentials
-# Get these from: affiliate-program.amazon.co.uk/creatorsapi
-AMAZON_CRED_ID  = os.environ["AMAZON_CREDENTIAL_ID"]
-AMAZON_CRED_SEC = os.environ["AMAZON_CREDENTIAL_SECRET"]
-AMAZON_TAG      = os.environ["AMAZON_ASSOCIATE_TAG"]
-AMAZON_COUNTRY  = os.environ.get("AMAZON_COUNTRY", "co.uk")  # "com" for US
+AMAZON_CRED_ID  = os.environ.get("AMAZON_CREDENTIAL_ID", "")
+AMAZON_CRED_SEC = os.environ.get("AMAZON_CREDENTIAL_SECRET", "")
+AMAZON_TAG      = os.environ.get("AMAZON_ASSOCIATE_TAG", "")
+AMAZON_COUNTRY  = os.environ.get("AMAZON_COUNTRY", "co.uk")
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta"
     f"/models/gemini-2.5-flash-lite:generateContent?key={GEMINI_KEY}"
 )
 
-SUPABASE_HEADERS = {
-    "apikey":        SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type":  "application/json",
-    "Prefer":        "return=representation"
-}
-
 # ── Config ───────────────────────────────────────────────────
-SLOTS      = 7    # pins to generate per run (1 per day for a week)
+TOP_N      = 3    # number of products to promote per run
+SLOTS      = 7    # total pins to generate (1 per day for a week)
 CANDIDATES = 10   # candidates generated per slot
 KEEP_TOP   = 3    # top N candidates kept per slot
 
 
-# ── 1. Get top product ───────────────────────────────────────
+# ── 1. Get top products ─────────────────────────────────────
 
-def get_top_product():
-    """Fetch the highest-scored active product from Supabase."""
-    resp = requests.get(
-        f"{SUPABASE_URL}/rest/v1/products",
-        headers=SUPABASE_HEADERS,
-        params={
-            "active": "eq.true",
-            "order":  "score.desc",
-            "limit":  "1"
-        }
-    )
-    resp.raise_for_status()
-    products = resp.json()
+def get_top_products(n=TOP_N):
+    """Fetch the highest-scored active products, skipping those pinned this week."""
+    # Get more than we need in case some were pinned recently
+    products = supabase_get("products", params={
+        "active": "eq.true",
+        "order":  "score.desc",
+        "limit":  str(n * 2)
+    })
+
     if not products:
         raise ValueError(
             "No active products found. "
             "Add products to the Supabase products table first."
         )
-    product = products[0]
-    print(f"Top product: {product['name']} (score={product['score']})")
-    return product
+
+    # Check which products already have pins from this week
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    recent_pins = supabase_get("pins", params={
+        "select":     "product_id",
+        "created_at": f"gte.{week_ago}",
+    })
+    recently_pinned = {p["product_id"] for p in recent_pins}
+
+    # Filter out recently pinned, but keep at least some
+    fresh = [p for p in products if p["id"] not in recently_pinned]
+    selected = (fresh if len(fresh) >= n else products)[:n]
+
+    for p in selected:
+        log.info(f"  Selected: {p['name'][:60]} (score={p.get('score', 0)})")
+
+    return selected
+
+
+def distribute_slots(products, total_slots):
+    """
+    Distribute pin slots across products, weighted by score.
+    Higher-scored products get more slots.
+    """
+    scores = [max(p.get("score", 1), 1) for p in products]
+    total_score = sum(scores)
+
+    # Weighted distribution, minimum 1 slot per product
+    allocation = []
+    remaining = total_slots
+
+    for i, score in enumerate(scores):
+        if i == len(scores) - 1:
+            # Last product gets remaining slots
+            allocation.append(remaining)
+        else:
+            slots = max(1, round(total_slots * score / total_score))
+            slots = min(slots, remaining - (len(scores) - i - 1))  # leave ≥1 for others
+            allocation.append(slots)
+            remaining -= slots
+
+    return allocation
 
 
 # ── 2. Amazon Creators API — get affiliate URL ───────────────
@@ -75,13 +109,15 @@ def get_top_product():
 def get_affiliate_url(asin, fallback_url=None):
     """
     Get affiliate URL from Amazon Creators API (python-amazon-paapi v6+).
-
-    Uses the new amazon_creatorsapi module which replaces the old
-    amazon_paapi module as of version 6.0.0.
-
     Falls back to the stored URL in the products table if the API
-    is unavailable (e.g. monthly sales drop below the threshold).
+    is unavailable.
     """
+    if not (AMAZON_CRED_ID and AMAZON_CRED_SEC and AMAZON_TAG):
+        log.info("  Amazon Creators API credentials not set — using fallback.")
+        if fallback_url:
+            return fallback_url
+        return f"https://www.amazon.co.uk/dp/{asin}?tag={AMAZON_TAG}" if AMAZON_TAG else None
+
     try:
         from amazon_creatorsapi import AmazonCreatorsApi
         from amazon_creatorsapi.models import GetItemsResource
@@ -107,30 +143,30 @@ def get_affiliate_url(asin, fallback_url=None):
 
         if items and items[0].detail_page_url:
             url = items[0].detail_page_url
-            print(f"  Affiliate URL from Creators API: {url[:70]}...")
+            log.info(f"  Affiliate URL from Creators API: {url[:70]}...")
             return url
         else:
-            print(f"  Creators API returned no URL for {asin}.")
+            log.info(f"  Creators API returned no URL for {asin}.")
 
     except ImportError:
-        print("  amazon_creatorsapi not installed — run: pip install python-amazon-paapi")
+        log.warning("  amazon_creatorsapi not installed — run: pip install python-amazon-paapi")
     except ItemsNotFoundError:
-        print(f"  ASIN {asin} not found in Amazon catalogue.")
+        log.warning(f"  ASIN {asin} not found in Amazon catalogue.")
     except AssociateValidationError:
-        print(f"  Associate account not validated — check your credentials and tag.")
+        log.warning(f"  Associate account not validated — check credentials and tag.")
     except TooManyRequestsError:
-        print(f"  Creators API rate limit hit — using fallback URL.")
+        log.warning(f"  Creators API rate limit hit — using fallback URL.")
     except AmazonCreatorsApiError as e:
-        print(f"  Creators API error: {e} — using fallback URL.")
+        log.warning(f"  Creators API error: {e} — using fallback URL.")
     except Exception as e:
-        print(f"  Unexpected error from Creators API: {e} — using fallback URL.")
+        log.warning(f"  Unexpected error from Creators API: {e} — using fallback URL.")
 
     # Fallback — use URL stored in products table
     if fallback_url:
-        print(f"  Using stored affiliate URL from products table.")
+        log.info(f"  Using stored affiliate URL from products table.")
         return fallback_url
 
-    print(f"  Warning: no affiliate URL available. Pin will have no link.")
+    log.warning(f"  No affiliate URL available for {asin}. Pin will have no link.")
     return None
 
 
@@ -141,9 +177,9 @@ def generate_candidates(product, n):
 Generate {n} UNIQUE high-converting Pinterest pin candidates for this product.
 
 Product:  {product['name']}
-Niche:    {product['niche']}
-Audience: {product['audience']}
-Category: {product['category']}
+Niche:    {product.get('niche', 'general')}
+Audience: {product.get('audience', 'general shoppers')}
+Category: {product.get('category', 'general')}
 
 Return ONLY a valid JSON array, no markdown:
 [{{
@@ -179,7 +215,7 @@ Score each pin candidate for this product: {product['name']}
 Score 1-10 on:
 - Hook strength (stops the scroll)
 - Keyword density (Pinterest SEO)
-- Emotional resonance with audience: {product['audience']}
+- Emotional resonance with audience: {product.get('audience', 'general shoppers')}
 - CTA clarity and naturalness
 
 Candidates:
@@ -221,7 +257,10 @@ def get_pexels_image(query):
     photos = resp.json().get("photos", [])
     if not photos:
         return None, None
-    photo = random.choice(photos)
+
+    # Prefer higher resolution images — sort by width, pick from top 5
+    photos.sort(key=lambda p: p["src"].get("original", p["src"]["large2x"]), reverse=True)
+    photo = random.choice(photos[:5])
     return photo["src"]["large2x"], photo["photographer"]
 
 
@@ -243,7 +282,7 @@ def upload_image(pexels_url):
     )
 
     if not upload_resp.ok:
-        print(f"  Storage error {upload_resp.status_code}: {upload_resp.text}")
+        log.error(f"  Storage error {upload_resp.status_code}: {upload_resp.text}")
         upload_resp.raise_for_status()
 
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{file_name}"
@@ -252,108 +291,116 @@ def upload_image(pexels_url):
 # ── 7. Save pin to Supabase ──────────────────────────────────
 
 def save_pin(pin, product, affiliate_url):
-    resp = requests.post(
-        f"{SUPABASE_URL}/rest/v1/pins",
-        headers=SUPABASE_HEADERS,
-        json={
-            "title":         pin["title"],
-            "description":   pin["description"],
-            "hashtags":      pin["hashtags"],
-            "pexels_search": pin["pexels_search"],
-            "hook_type":     pin.get("hook_type", ""),
-            "score":         pin.get("score", 0),
-            "score_reason":  pin.get("score_reason", ""),
-            "image_url":     pin["image_url"],
-            "photographer":  pin.get("photographer", ""),
-            "link_url":      affiliate_url or "",
-            "product_id":    product["id"],
-            "approved":      False,
-            "posted":        False
-        }
-    )
-    resp.raise_for_status()
+    resp = supabase_post("pins", {
+        "title":         pin["title"],
+        "description":   pin["description"],
+        "hashtags":      pin["hashtags"],
+        "pexels_search": pin["pexels_search"],
+        "hook_type":     pin.get("hook_type", ""),
+        "score":         pin.get("score", 0),
+        "score_reason":  pin.get("score_reason", ""),
+        "image_url":     pin["image_url"],
+        "photographer":  pin.get("photographer", ""),
+        "link_url":      affiliate_url or "",
+        "product_id":    product["id"],
+        "approved":      False,
+        "posted":        False
+    })
     return resp.json()[0]
 
 
 # ── Main ─────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print(f"Pin generation — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    print("=" * 60)
+    log.info("=" * 60)
+    log.info(f"Pin generation — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    log.info("=" * 60)
 
-    # 1. Get top scored product
-    product = get_top_product()
+    # 1. Get top scored products (multiple)
+    products = get_top_products(TOP_N)
+    slot_allocation = distribute_slots(products, SLOTS)
 
-    # 2. Get affiliate URL via Creators API (with fallback)
-    print(f"\nGetting affiliate URL for ASIN: {product['asin']}")
-    affiliate_url = get_affiliate_url(
-        asin         = product["asin"],
-        fallback_url = product.get("affiliate_url")
-    )
+    log.info(f"\n{len(products)} products × {SLOTS} total slots, "
+             f"keeping top {KEEP_TOP} per slot\n")
+    for p, slots in zip(products, slot_allocation):
+        log.info(f"  {p['name'][:50]} → {slots} slots")
 
-    print(f"\nGenerating {SLOTS} slots × {CANDIDATES} candidates, "
-          f"keeping top {KEEP_TOP} each\n")
+    # 2. Get affiliate URLs for each product
+    affiliate_urls = {}
+    for product in products:
+        log.info(f"\nGetting affiliate URL for ASIN: {product['asin']}")
+        affiliate_urls[product["id"]] = get_affiliate_url(
+            asin         = product["asin"],
+            fallback_url = product.get("affiliate_url")
+        )
 
     all_saved = []
 
-    for slot in range(SLOTS):
-        print(f"── Slot {slot + 1}/{SLOTS} ──")
+    # 3. Generate pins for each product
+    for product, num_slots in zip(products, slot_allocation):
+        affiliate_url = affiliate_urls[product["id"]]
+        log.info(f"\n{'─'*60}")
+        log.info(f"Product: {product['name'][:60]} ({num_slots} slots)")
+        log.info(f"{'─'*60}")
 
-        # 3. Generate candidates
-        print(f"  Generating {CANDIDATES} candidates...")
-        try:
-            candidates = generate_candidates(product, CANDIDATES)
-        except Exception as e:
-            print(f"  Generation failed: {e} — skipping slot")
-            continue
+        for slot in range(num_slots):
+            log.info(f"\n  ── Slot {slot + 1}/{num_slots} ──")
 
-        # 4. Score and rank
-        print(f"  Scoring candidates...")
-        try:
-            ranked = score_candidates(candidates, product)
-        except Exception as e:
-            print(f"  Scoring failed: {e} — using unranked order")
-            ranked = candidates
-
-        top = ranked[:KEEP_TOP]
-
-        # 5. Save each top candidate
-        for i, pin in enumerate(top):
-            print(f"  [{i+1}/{KEEP_TOP}] score={pin['score']} "
-                  f"— {pin['title'][:55]}...")
-
-            # Get image from Pexels
-            pexels_url, photographer = get_pexels_image(pin["pexels_search"])
-            if not pexels_url:
-                print(f"  No image found for '{pin['pexels_search']}' — skipping")
-                continue
-
-            # Upload to Supabase Storage
-            print(f"  Uploading image to Supabase...")
+            # Generate candidates
+            log.info(f"  Generating {CANDIDATES} candidates...")
             try:
-                pin["image_url"]    = upload_image(pexels_url)
-                pin["photographer"] = photographer
+                candidates = generate_candidates(product, CANDIDATES)
             except Exception as e:
-                print(f"  Upload failed: {e} — skipping")
+                log.error(f"  Generation failed: {e} — skipping slot")
                 continue
 
-            # Save pin row
+            # Score and rank
+            log.info(f"  Scoring candidates...")
             try:
-                saved = save_pin(pin, product, affiliate_url)
-                all_saved.append(saved)
-                print(f"  Saved pin id={saved['id']}")
+                ranked = score_candidates(candidates, product)
             except Exception as e:
-                print(f"  Save failed: {e} — skipping")
-                continue
+                log.warning(f"  Scoring failed: {e} — using unranked order")
+                ranked = candidates
 
-            time.sleep(0.5)
+            top = ranked[:KEEP_TOP]
 
-        time.sleep(2)
+            # Save each top candidate
+            for i, pin in enumerate(top):
+                log.info(f"  [{i+1}/{KEEP_TOP}] score={pin.get('score', '?')} "
+                         f"— {pin['title'][:55]}...")
 
-    print(f"\n{'='*60}")
-    print(f"Done. {len(all_saved)} pins saved.")
-    print(f"Product: {product['name']}")
-    print(f"Affiliate link: {affiliate_url or '(none)'}")
-    print(f"Go to your review app to approve pins.")
-    print(f"{'='*60}")
+                # Get image from Pexels
+                pexels_url, photographer = get_pexels_image(pin["pexels_search"])
+                if not pexels_url:
+                    log.warning(f"  No image found for '{pin['pexels_search']}' — skipping")
+                    continue
+
+                # Upload to Supabase Storage
+                log.info(f"  Uploading image...")
+                try:
+                    pin["image_url"]    = upload_image(pexels_url)
+                    pin["photographer"] = photographer
+                except Exception as e:
+                    log.error(f"  Upload failed: {e} — skipping")
+                    continue
+
+                # Save pin row
+                try:
+                    saved = save_pin(pin, product, affiliate_url)
+                    all_saved.append(saved)
+                    log.info(f"  Saved pin id={saved['id']}")
+                except Exception as e:
+                    log.error(f"  Save failed: {e} — skipping")
+                    continue
+
+                time.sleep(0.5)
+
+            time.sleep(2)
+
+    log.info(f"\n{'='*60}")
+    log.info(f"Done. {len(all_saved)} pins saved across {len(products)} products.")
+    for product in products:
+        count = sum(1 for s in all_saved if s.get("product_id") == product["id"])
+        log.info(f"  {product['name'][:50]}: {count} pins")
+    log.info(f"Go to your review app to approve pins.")
+    log.info(f"{'='*60}")

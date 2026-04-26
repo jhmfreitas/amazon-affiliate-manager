@@ -10,45 +10,34 @@ Focus:
 - Weak signal (BSR fallback)
 """
 
-import os, re, time, math, requests
+import re, time, math, requests
 from datetime import datetime, timezone
 from pinterest_auth import PinterestAuth
-
-# ── ENV ─────────────────────────────────────────────
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-
-SUPABASE_HEADERS = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
-}
+from config import log, supabase_get, supabase_patch, random_headers
 
 # ── LOAD PRODUCTS ───────────────────────────────────
 def load_products():
-    resp = requests.get(
-        f"{SUPABASE_URL}/rest/v1/products",
-        headers=SUPABASE_HEADERS,
-        params={"active": "eq.true", "order": "id.asc"}
-    )
-    resp.raise_for_status()
-    return resp.json()
+    return supabase_get("products", params={
+        "active": "eq.true",
+        "order": "id.asc"
+    })
 
 # ── AMAZON BSR (LOW TRUST SIGNAL) ───────────────────
 def get_amazon_bsr(asin):
     try:
         html = requests.get(
             f"https://www.amazon.co.uk/dp/{asin}",
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers=random_headers(),
             timeout=10
         ).text
 
         match = re.search(r"Best Sellers Rank.*?#([\d,]+)", html, re.DOTALL)
         if match:
             return int(match.group(1).replace(",", ""))
-    except:
-        pass
+    except requests.RequestException as e:
+        log.warning(f"  BSR fetch failed for {asin}: {e}")
+    except Exception as e:
+        log.warning(f"  BSR parse error for {asin}: {e}")
     return None
 
 # ── GOOGLE TRENDS KEYWORD ENGINE ────────────────────
@@ -115,17 +104,15 @@ def get_trend_score(product_name):
         return round(best_score, 1), best_direction
 
     except Exception as e:
-        print(f"Trends error: {e}")
+        log.warning(f"Trends error: {e}")
         return 50, "stable"
 
 # ── PINTEREST SAVES ────────────────────────────────
 def get_pinterest_saves(product_id, auth):
-    resp = requests.get(
-        f"{SUPABASE_URL}/rest/v1/pins",
-        headers=SUPABASE_HEADERS,
-        params={"product_id": f"eq.{product_id}", "posted": "eq.true"}
-    )
-    pins = resp.json()
+    pins = supabase_get("pins", params={
+        "product_id": f"eq.{product_id}",
+        "posted": "eq.true"
+    })
 
     total = 0
     for p in pins:
@@ -186,15 +173,11 @@ def compute_score(p):
 
 # ── SAVE ───────────────────────────────────────────
 def save_score(product_id, data):
-    requests.patch(
-        f"{SUPABASE_URL}/rest/v1/products?id=eq.{product_id}",
-        headers=SUPABASE_HEADERS,
-        json=data
-    )
+    supabase_patch(f"products?id=eq.{product_id}", data)
 
 # ── MAIN ───────────────────────────────────────────
 if __name__ == "__main__":
-    print("=== SCORING ENGINE V2 ===")
+    log.info("=== SCORING ENGINE V2 ===")
 
     products = load_products()
     auth = PinterestAuth()
@@ -202,7 +185,7 @@ if __name__ == "__main__":
     results = []
 
     for p in products:
-        print(f"\n→ {p['name']}")
+        log.info(f"\n→ {p['name']}")
 
         trend_score, trend_dir = get_trend_score(p["name"])
         saves = get_pinterest_saves(p["id"], auth)
@@ -228,10 +211,10 @@ if __name__ == "__main__":
             "commission": p.get("commission", 3.0)
         })
 
-        print(f"  Trend: {trend_score} ({trend_dir}) Δ{trend_delta}")
-        print(f"  Saves: {saves} Δ{save_delta}")
-        print(f"  BSR: {bsr}")
-        print(f"  Score: {score}")
+        log.info(f"  Trend: {trend_score} ({trend_dir}) Δ{trend_delta}")
+        log.info(f"  Saves: {saves} Δ{save_delta}")
+        log.info(f"  BSR: {bsr}")
+        log.info(f"  Score: {score}")
 
         save_score(p["id"], {
             **data,
@@ -243,7 +226,9 @@ if __name__ == "__main__":
 
         time.sleep(2)
 
-    top = max(results, key=lambda x: x[1])
-
-    print("\n=== TOP PRODUCT ===")
-    print(top)
+    if results:
+        top = max(results, key=lambda x: x[1])
+        log.info("\n=== TOP PRODUCT ===")
+        log.info(top)
+    else:
+        log.info("\nNo products scored.")
