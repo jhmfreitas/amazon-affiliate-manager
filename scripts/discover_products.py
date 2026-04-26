@@ -103,26 +103,51 @@ def fetch_price_from_page(asin):
         )
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Product page price selectors — ordered by specificity/reliability
-        for selector in [
-            "span.a-price-whole",  # Direct whole price on product page
-            "span[data-a-color='price']",  # Data attribute selector (more reliable)
-            "#corePriceDisplay_desktop_feature_div span.a-offscreen",  # Core price display
-            "span.a-price span.a-offscreen",  # Secondary fallback
-            "span.a-color-price",  # Generic fallback
+        # Try specific containers first
+        for container_selector in [
+            "#corePriceDisplay_desktop_feature_div .priceToPay",
+            "#corePrice_desktop .priceToPay",
+            "#priceblock_ourprice",
+            "#priceblock_dealprice",
+            ".apexPriceToPay"
         ]:
-            tag = soup.select_one(selector)
-            if tag:
-                text = tag.text.strip()
+            container = soup.select_one(container_selector)
+            if container:
+                # Inside the container, look for a-offscreen
+                for tag in container.select(".a-offscreen"):
+                    text = tag.get_text(strip=True)
+                    if "£" in text:
+                        match = re.search(r"£([\d]+[.,]?\d*)", text)
+                        if match:
+                            price_str = match.group(1).replace(",", "")
+                            try:
+                                return float(price_str)
+                            except ValueError:
+                                pass
+                
+                # If no a-offscreen with £, just get text of container
+                text = container.get_text(strip=True)
                 match = re.search(r"£([\d]+[.,]?\d*)", text)
                 if match:
                     price_str = match.group(1).replace(",", "")
                     try:
-                        price = float(price_str)
-                        log.debug(f"  Page price found: {text!r} → £{price}")
-                        return price
+                        return float(price_str)
                     except ValueError:
-                        continue
+                        pass
+
+        # Fallback to the first span.a-offscreen that's a child of a-price
+        # Avoid .a-text-price as it is usually the RRP / struck-out price
+        for tag in soup.select("span.a-price:not(.a-text-price) span.a-offscreen"):
+            text = tag.get_text(strip=True)
+            if "£" in text:
+                match = re.search(r"£([\d]+[.,]?\d*)", text)
+                if match:
+                    price_str = match.group(1).replace(",", "")
+                    try:
+                        return float(price_str)
+                    except ValueError:
+                        pass
+
     except Exception as e:
         log.warning(f"  Price page fetch failed for {asin}: {e}")
     return None
@@ -174,6 +199,14 @@ def scrape_category(url, category):
         try:
             resp = requests.get(url, headers=random_headers(), cookies=get_amazon_cookies(), timeout=15)
             resp.raise_for_status()
+            
+            soup = BeautifulSoup(resp.text, "html.parser")
+            items = soup.select("div.zg-grid-general-faceout")
+            
+            if not items:
+                # Amazon might return 200 OK but serve a CAPTCHA or empty page
+                raise requests.RequestException("Empty grid found (possible CAPTCHA/block)")
+                
             break
         except requests.RequestException as e:
             wait = RETRY_BACKOFF * attempt
@@ -184,9 +217,6 @@ def scrape_category(url, category):
             else:
                 log.error(f"  All {MAX_RETRIES} attempts failed for {url}")
                 return []
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-    items = soup.select("div.zg-grid-general-faceout")
 
     products = []
     skipped_cheap = 0
