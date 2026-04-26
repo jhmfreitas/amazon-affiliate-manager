@@ -30,7 +30,7 @@ PEXELS_KEY      = os.environ["PEXELS_API_KEY"]
 AMAZON_CRED_ID  = os.environ.get("AMAZON_CREDENTIAL_ID", "")
 AMAZON_CRED_SEC = os.environ.get("AMAZON_CREDENTIAL_SECRET", "")
 AMAZON_TAG      = os.environ.get("AMAZON_ASSOCIATE_TAG", "")
-AMAZON_COUNTRY  = os.environ.get("AMAZON_COUNTRY", "co.uk")
+AMAZON_COUNTRY  = os.environ.get("AMAZON_COUNTRY", "United Kingdom")
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta"
