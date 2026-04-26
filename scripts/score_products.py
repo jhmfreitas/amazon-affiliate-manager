@@ -135,19 +135,24 @@ def compute_score(p):
         "falling": -10
     }
 
-    # Weightings (Total 1.0)
-    score = (
-        (trend * 0.45) +
-        (saves * 0.35) +
-        (direction_bonus.get(p["trend_dir"], 0)) +
+    # Base score driven by demand and proof
+    base = (trend * 0.45) + (saves * 0.35)
+
+    # Momentum bonus/penalty (can be negative)
+    momentum = (
+        direction_bonus.get(p["trend_dir"], 0) +
         (trend_delta * 0.10) +
         (save_delta * 0.10)
     )
 
-    # Commission is the true multiplier (ROI)
-    score = score * max(1, p.get("commission", 4.0))
+    # Commission bonus (higher commission = more points)
+    # e.g., 6% commission = +18 points, 3% = +9 points
+    comm_bonus = p.get("commission", 3.0) * 3.0
 
-    return round(score, 2)
+    score = base + momentum + comm_bonus
+
+    # Prevent negative scores
+    return round(max(0.0, score), 2)
 
 # ── SAVE ───────────────────────────────────────────
 def save_score(product_id, data):
