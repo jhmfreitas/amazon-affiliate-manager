@@ -21,6 +21,7 @@ Improvements over v1:
 import os, json, random, uuid, time, requests
 from datetime import datetime, timezone, timedelta
 from config import log, supabase_get, supabase_post, SUPABASE_URL, SUPABASE_KEY
+from amazon_creatorsapi import AmazonCreatorsApi, Country
 
 # ── Secrets ──────────────────────────────────────────────────
 GEMINI_KEY      = os.environ["GEMINI_API_KEY"]
@@ -30,7 +31,7 @@ PEXELS_KEY      = os.environ["PEXELS_API_KEY"]
 AMAZON_CRED_ID  = os.environ.get("AMAZON_CREDENTIAL_ID", "")
 AMAZON_CRED_SEC = os.environ.get("AMAZON_CREDENTIAL_SECRET", "")
 AMAZON_TAG      = os.environ.get("AMAZON_ASSOCIATE_TAG", "")
-AMAZON_COUNTRY  = os.environ.get("AMAZON_COUNTRY", "United Kingdom")
+AMAZON_COUNTRY  = os.environ.get("AMAZON_COUNTRY", "US")
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta"
@@ -133,7 +134,7 @@ def get_affiliate_url(asin, fallback_url=None):
             credential_secret = AMAZON_CRED_SEC,
             version           = "2.2",
             tag               = AMAZON_TAG,
-            country           = AMAZON_COUNTRY
+            country           = Country.UK
         )
 
         items = amazon.get_items(
