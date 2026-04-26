@@ -19,7 +19,7 @@ jobs:
           cache-dependency-path: '**/requirements.txt'
 
       - name: Install dependencies
-        run: pip install requests amazon-paapi
+        run: pip install -r requirements.txt
 
       - name: Generate pins
         env:

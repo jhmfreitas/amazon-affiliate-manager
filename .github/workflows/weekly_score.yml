@@ -19,7 +19,7 @@ jobs:
           cache-dependency-path: '**/requirements.txt'
 
       - name: Install dependencies
-        run: pip install requests pytrends
+        run: pip install -r requirements.txt
 
       - name: Score products
         env:
