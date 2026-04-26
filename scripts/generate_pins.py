@@ -274,6 +274,7 @@ def upload_image(pexels_url):
     upload_resp = requests.post(
         f"{SUPABASE_URL}/storage/v1/object/{bucket}/{file_name}",
         headers={
+            "apikey":        SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type":  "image/jpeg",
             "x-upsert":      "true"

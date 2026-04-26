@@ -24,8 +24,8 @@ logging.basicConfig(
 log = logging.getLogger("pipeline")
 
 # ── Supabase ────────────────────────────────────────────────
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
+SUPABASE_KEY = os.environ["SUPABASE_KEY"].strip()
 
 SUPABASE_HEADERS = {
     "apikey":        SUPABASE_KEY,
