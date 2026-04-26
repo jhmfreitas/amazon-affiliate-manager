@@ -22,25 +22,6 @@ def load_products():
         "order": "id.asc"
     })
 
-# ── AMAZON BSR (LOW TRUST SIGNAL) ───────────────────
-def get_amazon_bsr(asin):
-    try:
-        html = requests.get(
-            f"https://www.amazon.co.uk/dp/{asin}",
-            headers=random_headers(),
-            cookies=get_amazon_cookies(),
-            timeout=10
-        ).text
-
-        match = re.search(r"Best Sellers Rank.*?#([\d,]+)", html, re.DOTALL)
-        if match:
-            return int(match.group(1).replace(",", ""))
-    except requests.RequestException as e:
-        log.warning(f"  BSR fetch failed for {asin}: {e}")
-    except Exception as e:
-        log.warning(f"  BSR parse error for {asin}: {e}")
-    return None
-
 # ── GOOGLE TRENDS KEYWORD ENGINE ────────────────────
 def extract_trend_candidates(product_name):
     name = product_name.lower()
@@ -134,11 +115,6 @@ def get_pinterest_saves(product_id, auth):
     return total
 
 # ── NORMALIZATION ──────────────────────────────────
-def normalize_bsr(bsr):
-    if not bsr:
-        return 50
-    return max(0, 100 - math.log10(bsr) * 20)
-
 def normalize_delta(delta, scale=20):
     return max(-10, min(10, delta / scale * 10))
 
@@ -149,7 +125,6 @@ def normalize_saves(saves):
 def compute_score(p):
     trend = p["trend_score"]
     saves = p["pinterest_saves"]
-    bsr   = normalize_bsr(p["bsr_rank"])
 
     trend_delta = normalize_delta(p["trend_delta"])
     save_delta  = normalize_delta(p["save_delta"])
@@ -158,17 +133,19 @@ def compute_score(p):
         "rising": 10,
         "stable": 0,
         "falling": -10
-    }[p["trend_dir"]]
+    }
 
+    # Weightings (Total 1.0)
     score = (
-        trend * 0.20 +
-        saves * 0.25 +
-        bsr   * 0.15 +
-        trend_delta * 0.10 +
-        save_delta  * 0.10 +
-        direction_bonus +
-        p["commission"] * 2
+        (trend * 0.45) +
+        (saves * 0.35) +
+        (direction_bonus.get(p["trend_dir"], 0)) +
+        (trend_delta * 0.10) +
+        (save_delta * 0.10)
     )
+
+    # Commission is the true multiplier (ROI)
+    score = score * max(1, p.get("commission", 4.0))
 
     return round(score, 2)
 
@@ -190,7 +167,6 @@ if __name__ == "__main__":
 
         trend_score, trend_dir = get_trend_score(p["name"])
         saves = get_pinterest_saves(p["id"], auth)
-        bsr = get_amazon_bsr(p["asin"])
 
         prev_trend = p.get("trend_score") or trend_score
         prev_saves = p.get("pinterest_saves") or saves
@@ -202,7 +178,6 @@ if __name__ == "__main__":
             "trend_score": trend_score,
             "trend_dir": trend_dir,
             "pinterest_saves": saves,
-            "bsr_rank": bsr,
             "trend_delta": trend_delta,
             "save_delta": save_delta
         }
@@ -214,7 +189,6 @@ if __name__ == "__main__":
 
         log.info(f"  Trend: {trend_score} ({trend_dir}) Δ{trend_delta}")
         log.info(f"  Saves: {saves} Δ{save_delta}")
-        log.info(f"  BSR: {bsr}")
         log.info(f"  Score: {score}")
 
         save_score(p["id"], {
