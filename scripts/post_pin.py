@@ -14,13 +14,20 @@ from datetime import datetime, timezone
 from pinterest_auth import PinterestAuth
 from config import log, supabase_get, supabase_patch
 
-# ── Secrets ──────────────────────────────────────────────────
-BOARD_ID = os.environ["PINTEREST_BOARD_ID"]
-
 PINTEREST_API = "https://api.pinterest.com/v5"
 
 
 # ── Supabase helpers ─────────────────────────────────────────
+
+def get_settings():
+    """Get global settings from Supabase."""
+    try:
+        settings = supabase_get("settings", {"id": "eq.1"})
+        return settings[0] if settings else {}
+    except Exception as e:
+        log.warning(f"Could not load settings from DB: {e}")
+        return {}
+
 
 def get_next_pin():
     """Get the oldest approved, unposted pin from Supabase."""
@@ -45,14 +52,14 @@ def mark_posted(pin_id, pinterest_pin_id):
 
 # ── Pinterest posting ─────────────────────────────────────────
 
-def build_payload(pin):
+def build_payload(pin, board_id):
     """Build the Pinterest pin payload from a Supabase pin row."""
     tags      = " ".join(f"#{t.lstrip('#')}" for t in (pin.get("hashtags") or []))
     full_desc = f"{pin['description']}\n\n{tags}".strip()
     link_url  = pin.get("link_url", "")
 
     payload = {
-        "board_id":    BOARD_ID,
+        "board_id":    board_id,
         "title":       pin["title"][:100],
         "description": full_desc[:500],
         "media_source": {
@@ -75,7 +82,15 @@ if __name__ == "__main__":
     log.info(f"Daily pin post — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     log.info("=" * 60)
 
-    # 1. Get next pin from queue
+    # 1. Get Board ID from DB (fallback to Env)
+    settings = get_settings()
+    board_id = settings.get("pinterest_board_id") or os.environ.get("PINTEREST_BOARD_ID")
+    
+    if not board_id:
+        log.error("No PINTEREST_BOARD_ID found in settings table or environment variables.")
+        exit(1)
+
+    # 2. Get next pin from queue
     pin = get_next_pin()
     if not pin:
         log.info("No approved pins in queue. Nothing posted today.")
@@ -83,17 +98,17 @@ if __name__ == "__main__":
         exit(0)
 
     log.info(f"Next pin: id={pin['id']} — {pin['title'][:70]}...")
-    log.info(f"Link URL: {pin.get('link_url') or '(none)'}")
+    log.info(f"Board ID: {board_id}")
 
-    # 2. Validate image URL
+    # 3. Validate image URL
     if not pin.get("image_url"):
         log.error(f"Pin {pin['id']} has no image URL — skipping.")
         exit(1)
 
-    # 3. Build payload
-    payload = build_payload(pin)
+    # 4. Build payload
+    payload = build_payload(pin, board_id)
 
-    # 4. Post to Pinterest — auto-refresh on 401 handled by PinterestAuth
+    # 5. Post to Pinterest — auto-refresh on 401 handled by PinterestAuth
     log.info("Posting to Pinterest...")
     auth = PinterestAuth()
     resp = auth.post(f"{PINTEREST_API}/pins", json=payload)
@@ -107,6 +122,6 @@ if __name__ == "__main__":
     log.info(f"Posted! Pinterest pin ID: {pinterest_id}")
     log.info(f"Pin URL: https://pinterest.com/pin/{pinterest_id}/")
 
-    # 5. Mark as posted in Supabase
+    # 6. Mark as posted in Supabase
     mark_posted(pin["id"], pinterest_id)
     log.info("Done.")

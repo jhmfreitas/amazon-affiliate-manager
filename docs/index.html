@@ -533,6 +533,11 @@
       <span class="nav-count" id="nc-products">0</span>
     </button>
 
+    <div class="nav-label">Settings</div>
+    <button class="nav-btn" id="nav-pinterest" onclick="showSection('pinterest', this)">
+      <span class="nav-dot" style="background:var(--accent);"></span> Pinterest
+    </button>
+
     <div class="sidebar-footer">
       <div class="user-row">
         <div class="user-avatar" id="user-avatar">?</div>
@@ -576,7 +581,7 @@
       <div class="loading"><span class="spinner"></span> Loading pins…</div>
     </div>
 
-    <!-- ── Products section (hidden by default) ── -->
+    <!-- ── Products section ── -->
     <div id="products-section" class="section-hidden">
       <div class="page-header">
         <div>
@@ -589,6 +594,38 @@
       </div>
       <div id="product-list">
         <div class="loading"><span class="spinner"></span> Loading products…</div>
+      </div>
+    </div>
+
+    <!-- ── Pinterest section ── -->
+    <div id="pinterest-section" class="section-hidden">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Pinterest Integration</h1>
+          <p class="page-sub">Connect your account to enable automatic posting</p>
+        </div>
+      </div>
+      
+      <div class="stat" style="max-width: 400px; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px;">
+        <div class="stat-label">Connection Status</div>
+        <div id="pinterest-status" style="font-size: 18px; font-weight: 600; color: var(--muted); margin-top: 8px;">
+          Not connected
+        </div>
+        <div id="pinterest-details" style="font-size: 12px; color: var(--faint); margin-top: 4px; font-family: 'DM Mono', monospace;">
+          App ID: 1564785
+        </div>
+      </div>
+
+      <button id="btn-connect-pinterest" class="btn-approve" style="width: auto; margin-left: 0; padding: 12px 28px; font-size: 14px;" onclick="connectPinterest()">
+        Connect Pinterest Account
+      </button>
+
+      <div style="margin-top: 32px; border-top: 1px solid var(--border); padding-top: 20px;">
+        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">Developer Information</h3>
+        <p style="font-size: 12px; color: var(--muted); line-height: 1.6; max-width: 500px;">
+          This integration uses the Pinterest API v5 to manage pins and boards. 
+          When you click "Connect", you will be redirected to Pinterest's secure authorization page to grant permissions.
+        </p>
       </div>
     </div>
   </main>
@@ -661,10 +698,66 @@ function showApp(user) {
 db.auth.onAuthStateChange((event, session) => {
   if (session?.user) {
     showApp(session.user);
+    handlePinterestCallback();
   } else {
     showLogin();
   }
 });
+
+// ── Pinterest OAuth ──────────────────────────────────────────
+
+const PINTEREST_APP_ID = "1564785";
+const PINTEREST_REDIRECT = window.location.origin + window.location.pathname;
+
+function connectPinterest() {
+  const scopes = "pins:write,pins:read,boards:read,boards:write,user_accounts:read";
+  const url = `https://www.pinterest.com/oauth/?client_id=${PINTEREST_APP_ID}&redirect_uri=${encodeURIComponent(PINTEREST_REDIRECT)}&response_type=code&scope=${scopes}`;
+  window.location.href = url;
+}
+
+let isExchangingToken = false;
+
+async function handlePinterestCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  
+  if (code && !isExchangingToken) {
+    isExchangingToken = true;
+    
+    // Clean up URL immediately so a refresh or second event doesn't trigger this again
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    toast('Exchanging authorization code...');
+    
+    try {
+      const { data, error } = await db.functions.invoke('exchange-token', {
+        body: { code: code }
+      });
+
+      if (error) {
+        // Try to get error message from response body if possible
+        const details = error.context?.message || error.message;
+        throw new Error(details);
+      }
+      
+      if (data && data.success) {
+        document.getElementById('pinterest-status').innerHTML = 
+          '<span style="color:var(--green)">✓ Account Connected & Tokens Saved</span>';
+        document.getElementById('btn-connect-pinterest').textContent = 'Reconnect Account';
+        toast('Pinterest account authorized and saved to DB!');
+      } else {
+        throw new Error(data?.error || 'Exchange failed');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to save Pinterest tokens: ' + e.message);
+      toast('Authorization failed.');
+    }
+    
+    // Switch to pinterest section to show the result
+    showSection('pinterest', document.getElementById('nav-pinterest'));
+  }
+}
 
 // ── Load pins ────────────────────────────────────────────────
 
@@ -729,10 +822,11 @@ function setFilter(f, btn) {
   filter = f; editingId = null;
 
   // If coming from products section, switch back to pins view
-  if (currentSection === 'products') {
+  if (currentSection === 'products' || currentSection === 'pinterest') {
     document.querySelector('.stats').style.display = '';
     document.getElementById('pin-list').style.display = '';
     document.getElementById('products-section').classList.add('section-hidden');
+    document.getElementById('pinterest-section').classList.add('section-hidden');
     currentSection = 'pins';
   }
 
@@ -750,6 +844,72 @@ async function approve(id) {
   if (error) { toast('Error: ' + error.message); return; }
   pins.find(p => p.id === id).approved = true;
   updateStats(); render(); toast('Approved — scheduled to post!');
+}
+
+// ── Post Now (Immediate trigger) ──────────────────────────────
+
+async function postNow(id) {
+  if (!confirm('Post this pin to Pinterest immediately?')) return;
+  
+  toast('Sending to Pinterest...');
+  
+  try {
+    console.log("Triggering post-pin for ID:", id);
+    // We call a Supabase Edge Function to handle the Pinterest API call securely
+    const { data, error } = await db.functions.invoke('post-pin', {
+      body: { pin_id: id }
+    });
+    
+    if (error) {
+      console.error("Supabase Function Error:", error);
+      let details = error.message;
+      
+      // Try to extract the JSON error from the function response
+      try {
+        if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json();
+          if (body && body.error) details = body.error;
+        } else if (error.context && error.context.error) {
+          details = error.context.error;
+        }
+      } catch (e) {
+        console.warn("Could not parse error body", e);
+      }
+      
+      throw new Error(details);
+    }
+    
+    if (data && data.success) {
+      toast('✓ Successfully posted to Pinterest!');
+      // Update local state
+      const pin = pins.find(p => p.id === id);
+      pin.posted = true;
+      pin.pinterest_id = data.pinterest_id;
+      pin.posted_at = new Date().toISOString();
+      updateStats();
+      render();
+    } else {
+      // This is where we show the "Standard Access" vs "Development Access" errors
+      const reason = (data && data.error) || 'Unknown error';
+      console.error("Pinterest API Rejection:", data);
+      
+      const isAuthError = reason.toLowerCase().includes('authorized') || 
+                        reason.toLowerCase().includes('permission') ||
+                        reason.toLowerCase().includes('grant');
+      
+      let msg = `✗ Pinterest API Error: ${reason}`;
+      if (isAuthError) {
+        msg += "\n\nNote: Since you are likely in 'Development' mode, you can only post to your own boards. If you need to post to other accounts, you must request 'Standard Access'.";
+      }
+      
+      alert(msg);
+      toast('Post failed.');
+    }
+  } catch (e) {
+    console.error("Critical Post Error:", e);
+    alert('✗ Error triggering post: ' + e.message);
+    toast('Error occurred.');
+  }
 }
 
 // ── Remove ───────────────────────────────────────────────────
@@ -1042,8 +1202,11 @@ function render() {
               <button class="btn-danger" onclick="remove(${pin.id})">Remove</button>
               <button class="btn-secondary" onclick="startEdit(${pin.id})">Edit</button>
               ${pin.approved
-                ? `<span style="font-size:12px;color:var(--green);
-                    margin-left:auto;font-weight:500;">Scheduled to post</span>`
+                ? `<div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
+                    <span style="font-size:12px;color:var(--green);font-weight:500;">Scheduled</span>
+                    <button class="btn-approve" style="background:var(--text);padding:6px 14px;font-size:11px;" 
+                      onclick="postNow(${pin.id})">Post Now</button>
+                  </div>`
                 : `<button class="btn-approve"
                     onclick="approve(${pin.id})">Approve</button>`
               }
@@ -1068,20 +1231,25 @@ function showSection(section, btn) {
   if (btn) btn.classList.add('active');
 
   // Show/hide sections
-  const pinSection     = document.getElementById('pin-list');
-  const pinHeader      = pinSection.previousElementSibling; // stats div
+  const pinSection      = document.getElementById('pin-list');
   const productsSection = document.getElementById('products-section');
+  const pinterestSection = document.getElementById('pinterest-section');
+
+  // Hide all sections first
+  document.querySelector('.stats').style.display = 'none';
+  pinSection.style.display = 'none';
+  productsSection.classList.add('section-hidden');
+  pinterestSection.classList.add('section-hidden');
 
   if (section === 'products') {
-    // Hide pin UI — stats bar + list
-    document.querySelector('.stats').style.display = 'none';
-    pinSection.style.display = 'none';
     productsSection.classList.remove('section-hidden');
     loadAllProducts();
+  } else if (section === 'pinterest') {
+    pinterestSection.classList.remove('section-hidden');
   } else {
+    // Default to pins
     document.querySelector('.stats').style.display = '';
     pinSection.style.display = '';
-    productsSection.classList.add('section-hidden');
   }
 }
 

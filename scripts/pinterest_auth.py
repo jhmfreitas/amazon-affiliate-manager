@@ -24,26 +24,45 @@ Usage:
 import os
 import base64
 import requests
+from config import supabase_get, supabase_patch, log
 
 
 class PinterestAuth:
     """
-    Manages Pinterest OAuth2 access tokens.
+    Manages Pinterest OAuth2 access tokens with database persistence.
 
-    Reads credentials from environment variables — never hardcoded.
-    Refreshes the access token automatically when refresh() is called.
-    Logs a warning if Pinterest issues a new refresh token so you know
-    to update the GitHub Secret before the old one expires.
+    - Loads current tokens from Supabase 'settings' table.
+    - Falls back to Environment Variables if DB is empty.
+    - Automatically updates the DB when a token is refreshed.
     """
 
     TOKEN_URL = "https://api.pinterest.com/v5/oauth/token"
     SCOPES    = "pins:write,pins:read,boards:read,boards:write,user_accounts:read"
 
     def __init__(self):
-        self._token         = os.environ["PINTEREST_TOKEN"]
-        self._refresh_token = os.environ["PINTEREST_REFRESH_TOKEN"]
-        self._app_id        = os.environ["PINTEREST_APP_ID"]
-        self._app_secret    = os.environ["PINTEREST_APP_SECRET"]
+        # Credentials for the refresh handshake (always from Env)
+        self._app_id     = os.environ["PINTEREST_APP_ID"]
+        self._app_secret = os.environ["PINTEREST_APP_SECRET"]
+
+        # Load tokens from Supabase settings
+        try:
+            settings = supabase_get("settings", {"id": "eq.1"})
+            if settings and len(settings) > 0:
+                s = settings[0]
+                self._token         = s.get("pinterest_access_token")
+                self._refresh_token = s.get("pinterest_refresh_token")
+                if not self._token:
+                    # Fallback to Env if DB row exists but tokens are null
+                    self._token = os.environ.get("PINTEREST_TOKEN")
+                    self._refresh_token = os.environ.get("PINTEREST_REFRESH_TOKEN")
+            else:
+                # Fallback to Env
+                self._token         = os.environ.get("PINTEREST_TOKEN")
+                self._refresh_token = os.environ.get("PINTEREST_REFRESH_TOKEN")
+        except Exception as e:
+            log.warning(f"Could not load tokens from DB: {e}. Using Env fallback.")
+            self._token         = os.environ.get("PINTEREST_TOKEN")
+            self._refresh_token = os.environ.get("PINTEREST_REFRESH_TOKEN")
 
     @property
     def token(self):
@@ -59,10 +78,9 @@ class PinterestAuth:
     def refresh(self):
         """
         Exchange the refresh token for a new access token.
-        Updates self._token in place.
-        Warns if Pinterest issues a new refresh token (update GitHub Secret).
+        Updates self._token and PERSISTS the new values to Supabase.
         """
-        print("Refreshing Pinterest access token...")
+        log.info("Refreshing Pinterest access token...")
 
         credentials = base64.b64encode(
             f"{self._app_id}:{self._app_secret}".encode()
@@ -82,22 +100,30 @@ class PinterestAuth:
         )
 
         if not resp.ok:
-            print(f"Token refresh failed {resp.status_code}: {resp.text}")
+            log.error(f"Token refresh failed {resp.status_code}: {resp.text}")
             resp.raise_for_status()
 
         data            = resp.json()
         self._token     = data["access_token"]
-
-        # Pinterest may issue a new refresh token near its 1-year expiry
+        
+        # Pinterest may issue a new refresh token
         new_refresh = data.get("refresh_token")
         if new_refresh and new_refresh != self._refresh_token:
             self._refresh_token = new_refresh
-            print("=" * 60)
-            print("NEW REFRESH TOKEN ISSUED — update GitHub Secret:")
-            print(f"PINTEREST_REFRESH_TOKEN = {new_refresh}")
-            print("=" * 60)
+            log.info("New refresh token received.")
 
-        print("Access token refreshed successfully.")
+        # Persist to Supabase
+        try:
+            supabase_patch("settings?id=eq.1", {
+                "pinterest_access_token":  self._token,
+                "pinterest_refresh_token": self._refresh_token,
+                "pinterest_updated_at":    "now()"
+            })
+            log.info("Saved refreshed tokens to Supabase settings table.")
+        except Exception as e:
+            log.error(f"Failed to persist refreshed tokens to DB: {e}")
+
+        log.info("Access token refreshed successfully.")
         return self._token
 
     def get(self, url, **kwargs):
