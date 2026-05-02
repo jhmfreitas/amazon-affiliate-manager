@@ -12,7 +12,7 @@ Runs weekly (Monday 9am UTC, after score_products.py).
 """
 
 import os, json, random, uuid, time, requests
-from datetime import datetime
+from datetime import datetime, timezone
 
 # ── Secrets ──────────────────────────────────────────────────
 GEMINI_KEY      = os.environ["GEMINI_API_KEY"]
@@ -329,7 +329,7 @@ def save_pin(pin, product, affiliate_url):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(f"Pin generation — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"Pin generation — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     print("=" * 60)
 
     # 1. Get top scored product
