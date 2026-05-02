@@ -116,7 +116,7 @@ def get_affiliate_url(asin, fallback_url=None):
     is unavailable (e.g. monthly sales drop below the threshold).
     """
     try:
-        from amazon_creatorsapi import AmazonCreatorsApi
+        from amazon_creatorsapi import AmazonCreatorsApi, Country
         from amazon_creatorsapi.errors import (
             AmazonCreatorsApiError,
             ItemsNotFoundError,
@@ -124,21 +124,50 @@ def get_affiliate_url(asin, fallback_url=None):
             AssociateValidationError
         )
 
+        # Map country string to Country enum
+        # Docs: country=Country.US, Country.UK, Country.DE etc.
+        country_map = {
+            "com":    Country.US,
+            "co.uk":  Country.UK,
+            "co.jp":  Country.JP,
+            "de":     Country.DE,
+            "fr":     Country.FR,
+            "es":     Country.ES,
+            "it":     Country.IT,
+            "ca":     Country.CA,
+            "com.au": Country.AU,
+            "com.br": Country.BR,
+            "in":     Country.IN,
+            "com.mx": Country.MX,
+            "sg":     Country.SG,
+            "ae":     Country.AE,
+            "nl":     Country.NL,
+            "se":     Country.SE,
+            "pl":     Country.PL,
+            "com.tr": Country.TR,
+            "eg":     Country.EG,
+            "sa":     Country.SA,
+        }
+
+        country_enum = country_map.get(AMAZON_COUNTRY, Country.UK)
+
         amazon = AmazonCreatorsApi(
             credential_id     = AMAZON_CRED_ID,
             credential_secret = AMAZON_CRED_SEC,
             version           = "2.2",
             tag               = AMAZON_TAG,
-            country           = AMAZON_COUNTRY
+            country           = country_enum,
+            throttling        = 1   # 1 second between calls — avoids rate limits
         )
 
-        # No resources parameter needed — we only need detail_page_url
-        # which is always returned by default
+        # detail_page_url is returned by default and already contains
+        # your affiliate tag in the format:
+        # https://www.amazon.co.uk/dp/ASIN?tag=yourtag-21&linkCode=...
         items = amazon.get_items([asin])
 
         if items and items[0].detail_page_url:
             url = items[0].detail_page_url
-            print(f"  Affiliate URL from Creators API: {url[:70]}...")
+            print(f"  ✓ Affiliate URL: {url[:80]}...")
             return url
         else:
             print(f"  Creators API returned no URL for {asin}.")
@@ -148,7 +177,7 @@ def get_affiliate_url(asin, fallback_url=None):
     except ItemsNotFoundError:
         print(f"  ASIN {asin} not found in Amazon catalogue.")
     except AssociateValidationError:
-        print(f"  Associate account not validated — check credentials and tag.")
+        print(f"  Associate account not validated — check your tag: {AMAZON_TAG}")
     except TooManyRequestsError:
         print(f"  Creators API rate limit hit — using fallback URL.")
     except AmazonCreatorsApiError as e:
