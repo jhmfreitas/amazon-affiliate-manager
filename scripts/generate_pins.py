@@ -65,9 +65,10 @@ def gemini_call(prompt):
             json={"contents": [{"parts": [{"text": prompt}]}]}
         )
 
-        if resp.status_code == 429:
-            wait = 15 * (2 ** attempt)  # 15, 30, 60, 120 seconds
-            print(f"  Gemini rate limited — waiting {wait}s before retry "
+        if resp.status_code in (429, 503):
+            reason = "rate limited" if resp.status_code == 429 else "unavailable"
+            wait   = 15 * (2 ** attempt)  # 15, 30, 60, 120 seconds
+            print(f"  Gemini {reason} ({resp.status_code}) — waiting {wait}s "
                   f"(attempt {attempt + 1}/{GEMINI_MAX_RETRY})...")
             time.sleep(wait)
             continue
@@ -126,6 +127,7 @@ def get_affiliate_url(asin, fallback_url=None):
 
         # Map country string to Country enum
         # Docs: country=Country.US, Country.UK, Country.DE etc.
+        # Only include Country enum values confirmed in the library docs
         country_map = {
             "com":    Country.US,
             "co.uk":  Country.UK,
@@ -137,16 +139,6 @@ def get_affiliate_url(asin, fallback_url=None):
             "ca":     Country.CA,
             "com.au": Country.AU,
             "com.br": Country.BR,
-            "in":     Country.IN,
-            "com.mx": Country.MX,
-            "sg":     Country.SG,
-            "ae":     Country.AE,
-            "nl":     Country.NL,
-            "se":     Country.SE,
-            "pl":     Country.PL,
-            "com.tr": Country.TR,
-            "eg":     Country.EG,
-            "sa":     Country.SA,
         }
 
         country_enum = country_map.get(AMAZON_COUNTRY, Country.UK)
@@ -286,6 +278,7 @@ def upload_image(pexels_url):
         f"{SUPABASE_URL}/storage/v1/object/{bucket}/{file_name}",
         headers={
             "Authorization": f"Bearer {SUPABASE_KEY}",
+            "apikey":        SUPABASE_KEY,   # required alongside Authorization
             "Content-Type":  "image/jpeg",
             "x-upsert":      "true"
         },
@@ -370,7 +363,7 @@ if __name__ == "__main__":
 
         # 5. Save each top candidate
         for i, pin in enumerate(top):
-            print(f"  [{i+1}/{KEEP_TOP}] score={pin['score']} "
+            print(f"  [{i+1}/{KEEP_TOP}] score={pin.get('score', 'unranked')} "
                   f"— {pin['title'][:55]}...")
 
             # Get image from Pexels
