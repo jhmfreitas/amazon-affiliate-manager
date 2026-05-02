@@ -143,13 +143,17 @@ def get_affiliate_url(asin, fallback_url=None):
 
         country_enum = country_map.get(AMAZON_COUNTRY, Country.UK)
 
+        # Debug: Print first 4 chars of credentials (safe)
+        print(f"  Debug: Using ID starting with {AMAZON_CRED_ID[:4]}...")
+        print(f"  Debug: Using Tag: {AMAZON_TAG}")
+
         amazon = AmazonCreatorsApi(
-            credential_id     = AMAZON_CRED_ID,
-            credential_secret = AMAZON_CRED_SEC,
-            version           = "2.2",
-            tag               = AMAZON_TAG,
-            country           = country_enum,
-            throttling        = 1   # 1 second between calls — avoids rate limits
+            access_key    = AMAZON_CRED_ID.strip(),
+            secret_key    = AMAZON_CRED_SEC.strip(),
+            version       = "2.2",
+            tag           = AMAZON_TAG.strip(),
+            country       = country_enum,
+            throttling    = 1
         )
 
         # detail_page_url is returned by default and already contains

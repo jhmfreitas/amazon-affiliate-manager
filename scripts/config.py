@@ -34,6 +34,9 @@ SUPABASE_HEADERS = {
     "Prefer":        "return=representation"
 }
 
+# ── Amazon ──────────────────────────────────────────────────
+AMAZON_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "pinnpurchas0f-21").strip()
+
 # ── Amazon commission rates (UK) ────────────────────────────
 # Source: affiliate-program.amazon.co.uk/help/node/topic/GRXPHT8U84RAYDXZ
 COMMISSION_RATES = {

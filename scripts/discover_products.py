@@ -16,7 +16,8 @@ import os, re, json, time, requests
 from bs4 import BeautifulSoup
 from config import (
     log, random_headers, get_amazon_cookies, get_commission, MIN_PRICE,
-    supabase_get, supabase_post, supabase_patch, SUPABASE_HEADERS, SUPABASE_URL
+    supabase_get, supabase_post, supabase_patch, SUPABASE_HEADERS, SUPABASE_URL,
+    AMAZON_TAG
 )
 
 # ── Gemini for niche/audience classification ──────
@@ -219,6 +220,35 @@ def sync_commissions():
     return updated
 
 
+# ── BACKFILL AFFILIATE LINKS ───────────────────────
+def backfill_affiliate_urls():
+    """
+    Ensure all existing active products have a valid affiliate URL.
+    This provides a fallback if the Creators API fails.
+    """
+    products = supabase_get("products", params={
+        "active": "eq.true",
+        "affiliate_url": "is.null",
+        "select": "id,asin"
+    })
+
+    if not products:
+        return 0
+
+    log.info(f"Backfilling affiliate links for {len(products)} products...")
+    updated = 0
+    for p in products:
+        # Construct standard affiliate link with professional tracking code
+        url = f"https://www.amazon.co.uk/dp/{p['asin']}?tag={AMAZON_TAG}&linkCode=ll2"
+        try:
+            supabase_patch(f"products?id=eq.{p['id']}", {"affiliate_url": url})
+            updated += 1
+        except Exception as e:
+            log.warning(f"  Failed to update link for {p['asin']}: {e}")
+
+    return updated
+
+
 # ── SCRAPE BESTSELLER PAGE ─────────────────────────
 def scrape_category(url, category):
     log.info(f"Scraping: {url}")
@@ -385,6 +415,7 @@ def insert_products(products, category, classifications):
             "niche": cls["niche"],
             "audience": cls["audience"],
             "commission": commission,
+            "affiliate_url": f"https://www.amazon.co.uk/dp/{p['asin']}?tag={AMAZON_TAG}&linkCode=ll2",
             "active": True,
         }
 
@@ -439,4 +470,7 @@ if __name__ == "__main__":
     # Sync commissions for existing products
     commissions_synced = sync_commissions()
 
-    log.info(f"=== DONE — {total_new} new products, {backfilled} prices backfilled, {commissions_synced} commissions synced ===")
+    # Backfill affiliate links
+    links_backfilled = backfill_affiliate_urls()
+
+    log.info(f"=== DONE — {total_new} new products, {backfilled} prices backfilled, {links_backfilled} links backfilled, {commissions_synced} commissions synced ===")
