@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 from pinterest_auth import PinterestAuth
 
 # ── Secrets ──────────────────────────────────────────────────
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-BOARD_ID     = os.environ["PINTEREST_BOARD_ID"]
+SUPABASE_URL       = os.environ["SUPABASE_URL"]
+SUPABASE_KEY       = os.environ["SUPABASE_KEY"]
+DEFAULT_BOARD_ID   = os.environ.get("PINTEREST_BOARD_ID", "")
 
 SUPABASE_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -64,21 +64,38 @@ def mark_posted(pin_id, pinterest_pin_id):
 
 # ── Pinterest posting ─────────────────────────────────────────
 
+MAX_DESC = 500   # Pinterest API hard limit for description
+MAX_ALT  = 500   # Pinterest API hard limit for alt_text
+
+
 def build_payload(pin):
-    """Build the Pinterest pin payload from a Supabase pin row."""
-    tags      = " ".join(f"#{t.lstrip('#')}" for t in (pin.get("hashtags") or []))
-    full_desc = f"{pin['description']}\n\n{tags}".strip()
-    link_url  = pin.get("link_url", "")
+    """Build the Pinterest pin payload from a Supabase pin row.
+
+    Description is sent as-is (already keyword-optimized by Gemini).
+    No hashtags — they're dead on Pinterest and can hurt SEO.
+    """
+    description = (pin.get("description") or "").strip()[:MAX_DESC]
+    link_url    = pin.get("link_url", "")
+
+    # Use per-pin board if set, otherwise fall back to env var
+    board_id = pin.get("board_id") or DEFAULT_BOARD_ID
+    if not board_id:
+        raise ValueError("No board_id on pin and no PINTEREST_BOARD_ID env var set.")
 
     payload = {
-        "board_id":    BOARD_ID,
+        "board_id":    board_id,
         "title":       pin["title"][:100],
-        "description": full_desc[:500],
+        "description": description,
         "media_source": {
             "source_type": "image_url",
             "url":         pin["image_url"]
         }
     }
+
+    # Alt text for accessibility (Pinterest API field)
+    alt_text = (pin.get("alt_text") or "").strip()
+    if alt_text:
+        payload["alt_text"] = alt_text[:MAX_ALT]
 
     # Only add link if one exists — Pinterest rejects empty link field
     if link_url:

@@ -249,6 +249,73 @@ def get_pinterest_saves(product_id, auth: PinterestAuth):
         return 0
 
 
+# ── 4.5. Keyword research ─ Google autocomplete + Gemini ─────
+
+def google_autocomplete(query, lang="en", country="uk"):
+    try:
+        resp = requests.get(
+            "https://suggestqueries.google.com/complete/search",
+            params={"client": "firefox", "q": query, "hl": lang, "gl": country},
+            timeout=5
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data[1] if len(data) > 1 else []
+    except Exception as e:
+        print(f"  Google autocomplete failed for '{query}': {e}")
+        return []
+
+def research_keywords(product):
+    name     = product["name"]
+    niche    = product.get("niche", "")
+    category = product["category"]
+    audience = product.get("audience", "")
+
+    # Build seed queries
+    seeds = [
+        f"{niche} ideas pinterest",
+        f"best {category} {niche}",
+        f"{niche} aesthetic",
+        f"{category} setup ideas",
+        f"{niche} for {audience.split(',')[0].strip() if audience else 'everyone'}",
+        f"{category} must haves",
+    ]
+
+    print(f"  Researching Pinterest keywords...")
+    all_suggestions = []
+    for seed in seeds:
+        suggestions = google_autocomplete(seed)
+        all_suggestions.extend(suggestions)
+        time.sleep(0.3)
+
+    unique = list(dict.fromkeys(all_suggestions))[:40]
+
+    prompt = f"""You are a Pinterest SEO keyword expert.
+
+Product: {name}
+Niche: {niche} | Category: {category} | Audience: {audience}
+
+Real Google autocomplete suggestions:
+{json.dumps(unique, indent=2)}
+
+Generate a refined list of 15-25 Pinterest-optimized keyword phrases.
+Return ONLY a JSON array of strings, no markdown.
+"""
+    resp = requests.post(
+        GEMINI_URL,
+        json={"contents": [{"parts": [{"text": prompt}]}]}
+    )
+    resp.raise_for_status()
+    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    text = text.replace("```json", "").replace("```", "").strip()
+    try:
+        keywords = json.loads(text)
+        print(f"  Found {len(keywords)} Pinterest keywords")
+        return keywords
+    except:
+        return unique[:20]
+
+
 # ── 5. Gemini scoring engine ─────────────────────────────────
 
 def score_products_with_gemini(products_data):
@@ -256,21 +323,22 @@ def score_products_with_gemini(products_data):
 Score each product 0-100 for Pinterest promotion potential THIS WEEK.
 
 Scoring weights:
-- Amazon BSR rank      30% (lower = more popular = higher score)
-- Google Trends score  25% (higher interest = higher score)
-- Trend direction      15% (rising=+15, stable=+0, falling=-15)
-- Pinterest saves      20% (more saves = better conversion proof)
-- Commission rate      10% (higher % = higher score)
+- Pinterest Search Intent 35% (how strong/relevant are the discovered keywords?)
+- Amazon BSR rank         20% (lower = more popular = higher score)
+- Google Trends score     15% (higher interest = higher score)
+- Trend direction         10% (rising=+10, stable=+0, falling=-10)
+- Pinterest saves         10% (more saves = better conversion proof)
+- Commission rate         10% (higher % = higher score)
 
 BSR scoring guide:
-- Under 1,000    → 30 points
-- 1,000-10,000   → 25 points
-- 10,000-50,000  → 18 points
-- 50,000-100,000 → 10 points
-- Over 100,000   → 5 points
-- Unknown        → 12 points (assume average)
+- Under 1,000    → 20 points
+- 1,000-10,000   → 15 points
+- 10,000-50,000  → 10 points
+- 50,000-100,000 → 5 points
+- Over 100,000   → 2 points
+- Unknown        → 8 points (assume average)
 
-Products to score:
+Products to score (including their discovered Pinterest keywords):
 {json.dumps(products_data, indent=2)}
 
 Return ONLY valid JSON array, no markdown:
@@ -278,7 +346,7 @@ Return ONLY valid JSON array, no markdown:
   {{
     "asin":   "...",
     "score":  87.5,
-    "reason": "one sentence explaining the score"
+    "reason": "one sentence explaining the score based heavily on keyword intent"
   }}
 ]"""
 
@@ -294,18 +362,19 @@ Return ONLY valid JSON array, no markdown:
 
 # ── 6. Save scores to Supabase ───────────────────────────────
 
-def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves):
+def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves, keywords):
     resp = requests.patch(
         f"{SUPABASE_URL}/rest/v1/products?id=eq.{product_id}",
         headers=SUPABASE_HEADERS,
         json={
-            "score":           score,
-            "score_reason":    reason,
-            "bsr_rank":        bsr,
-            "trend_score":     trend_score,
-            "trend_dir":       trend_dir,
-            "pinterest_saves": saves,
-            "last_scored_at":  datetime.now(timezone.utc).isoformat()
+            "score":              score,
+            "score_reason":       reason,
+            "bsr_rank":           bsr,
+            "trend_score":        trend_score,
+            "trend_dir":          trend_dir,
+            "pinterest_saves":    saves,
+            "pinterest_keywords": keywords,
+            "last_scored_at":     datetime.now(timezone.utc).isoformat()
         }
     )
     resp.raise_for_status()
@@ -336,6 +405,7 @@ if __name__ == "__main__":
         bsr                    = get_amazon_bsr(p["asin"])
         trend_score, trend_dir = get_trend_score(p["name"])
         saves                  = get_pinterest_saves(p["id"], auth)
+        keywords               = research_keywords(p)
         commission             = p.get("commission") or COMMISSION_RATES.get(
                                    p.get("category", "").lower(),
                                    COMMISSION_RATES["default"]
@@ -347,7 +417,8 @@ if __name__ == "__main__":
             "trend_score": trend_score,
             "trend_dir":   trend_dir,
             "saves":       saves,
-            "commission":  commission
+            "commission":  commission,
+            "keywords":    keywords
         }
 
         products_data.append({
@@ -358,7 +429,8 @@ if __name__ == "__main__":
             "trend_score": trend_score,
             "trend_dir":   trend_dir,
             "saves":       saves,
-            "commission":  commission
+            "commission":  commission,
+            "keywords":    keywords
         })
 
         time.sleep(2)
@@ -379,7 +451,8 @@ if __name__ == "__main__":
             bsr         = sig.get("bsr"),
             trend_score = sig.get("trend_score", 0),
             trend_dir   = sig.get("trend_dir", "stable"),
-            saves       = sig.get("saves", 0)
+            saves       = sig.get("saves", 0),
+            keywords    = sig.get("keywords", [])
         )
         print(f"  {asin} → {s['score']}/100 — {s['reason']}")
 

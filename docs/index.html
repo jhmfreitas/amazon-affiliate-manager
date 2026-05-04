@@ -765,10 +765,11 @@ async function loadPins() {
   document.getElementById('refresh-icon').innerHTML =
     '<span class="spinner"></span>';
 
-  // Fetch pins and products in parallel
-  const [pinsRes, productsRes] = await Promise.all([
+  // Fetch pins, active products (for pin cards), and ALL products count in parallel
+  const [pinsRes, productsRes, allProductsCountRes] = await Promise.all([
     db.from('pins').select('*').order('created_at', { ascending: false }),
-    db.from('products').select('id, name, category, score, commission, affiliate_url').eq('active', true)
+    db.from('products').select('id, name, category, score, commission, affiliate_url').eq('active', true),
+    db.from('products').select('id', { count: 'exact', head: true })
   ]);
 
   document.getElementById('refresh-icon').textContent = '↻';
@@ -786,6 +787,10 @@ async function loadPins() {
   // Build products lookup map
   products = {};
   (productsRes.data || []).forEach(p => products[p.id] = p);
+
+  // Update products count in sidebar immediately
+  const totalProducts = allProductsCountRes.count || 0;
+  document.getElementById('nc-products').textContent = totalProducts;
 
   updateStats();
   render();
@@ -946,25 +951,32 @@ function cancelEdit()  { editingId = null; render(); }
 async function saveEdit(id) {
   const title = document.getElementById(`t-${id}`).value.trim();
   const description = document.getElementById(`d-${id}`).value.trim();
-  const hashtags = document.getElementById(`h-${id}`).value
+  const altTextInput = document.getElementById(`alt-${id}`);
+  const alt_text = altTextInput ? altTextInput.value.trim() : null;
+  const keywords = document.getElementById(`h-${id}`).value
     .split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean);
 
   if (!title || !description) {
     toast('Title and description cannot be empty.'); return;
   }
+  if (description.length > 500) {
+    toast(`Description is ${description.length} chars — max 500.`); return;
+  }
 
   const linkInput = document.getElementById(`link-edit-${id}`);
   const link_url  = linkInput ? linkInput.value.trim() : null;
 
-  const update = { title, description, hashtags };
+  const update = { title, description, hashtags: keywords };
   if (link_url !== null) update.link_url = link_url;
+  if (alt_text !== null) update.alt_text = alt_text;
 
   const { error } = await db.from('pins').update(update).eq('id', id);
   if (error) { toast('Error: ' + error.message); return; }
 
   const pin = pins.find(p => p.id === id);
-  pin.title = title; pin.description = description; pin.hashtags = hashtags;
+  pin.title = title; pin.description = description; pin.hashtags = keywords;
   if (link_url !== null) pin.link_url = link_url;
+  if (alt_text !== null) pin.alt_text = alt_text;
   editingId = null; render(); toast('Changes saved!');
 }
 
@@ -1058,8 +1070,8 @@ function render() {
     const status    = getStatus(pin);
     const isEditing = editingId === pin.id;
     const canEdit   = !pin.posted;
-    const tags      = (pin.hashtags || [])
-      .map(t => `<span class="tag">#${esc(t)}</span>`).join('');
+    const kwTags   = (pin.hashtags || [])
+      .map(t => `<span class="tag">${esc(t)}</span>`).join('');
 
     return `
     <div class="pin-card">
@@ -1114,13 +1126,21 @@ function render() {
                 value="${esc(pin.title)}" maxlength="100" />
             </div>
             <div>
-              <div class="field-label">Description</div>
-              <textarea id="d-${pin.id}" class="edit-textarea">${esc(pin.description)}</textarea>
+              <div class="field-label">Description <span style="font-weight:400;color:${pin.description.length > 500 ? 'var(--red)' : 'var(--faint)'}">(${pin.description.length}/500 chars)</span></div>
+              <textarea id="d-${pin.id}" class="edit-textarea" maxlength="500"
+                style="min-height:120px;"
+                oninput="this.previousElementSibling.querySelector('span').textContent='('+this.value.length+'/500 chars)';this.previousElementSibling.querySelector('span').style.color=this.value.length>500?'var(--red)':'var(--faint)'">${esc(pin.description)}</textarea>
             </div>
             <div>
-              <div class="field-label">Hashtags — comma separated, no #</div>
+              <div class="field-label">Alt text (accessibility) <span style="font-weight:400;color:var(--faint)">(${(pin.alt_text||'').length}/500 chars)</span></div>
+              <textarea id="alt-${pin.id}" class="edit-textarea" maxlength="500"
+                style="min-height:55px;" placeholder="Describe the image for visually impaired users…">${esc(pin.alt_text || '')}</textarea>
+            </div>
+            <div>
+              <div class="field-label">Keywords (SEO reference) — comma separated</div>
               <input id="h-${pin.id}" class="edit-input"
-                value="${esc((pin.hashtags || []).join(', '))}" />
+                value="${esc((pin.hashtags || []).join(', '))}"
+                placeholder="e.g. standing desk ideas, home office setup, remote work" />
             </div>
             <div>
               <div class="field-label">Image search query</div>
@@ -1144,13 +1164,25 @@ function render() {
               <div class="field-title">${esc(pin.title)}</div>
             </div>
             <div>
-              <div class="field-label">Description</div>
+              <div class="field-label">Description <span style="font-weight:400;color:${(pin.description||'').length > 500 ? 'var(--red)' : 'var(--faint)'}">(${(pin.description||'').length}/500 chars)</span></div>
               <div class="field-desc">${esc(pin.description)}</div>
             </div>
+            ${pin.alt_text ? `
             <div>
-              <div class="field-label">Hashtags</div>
-              <div class="tags-wrap">${tags}</div>
+              <div class="field-label">Alt text</div>
+              <div style="font-size:11px;color:var(--muted);
+                font-style:italic;">${esc(pin.alt_text)}</div>
+            </div>` : ''}
+            <div>
+              <div class="field-label">Keywords (SEO reference)</div>
+              <div class="tags-wrap">${kwTags || '<span style="font-size:11px;color:var(--faint)">No keywords set</span>'}</div>
             </div>
+            ${pin.board_id ? `
+            <div>
+              <div class="field-label">Board</div>
+              <div style="font-size:11px;color:var(--muted);
+                font-family:'DM Mono',monospace;">${esc(pin.board_id)}</div>
+            </div>` : ''}
             ${pin.score_reason ? `
             <div>
               <div class="field-label">AI score reason</div>
@@ -1405,7 +1437,7 @@ function renderProducts() {
         <div class="product-reason">
           ${p.score_reason
             ? '💡 ' + esc(p.score_reason)
-            : 'Not scored yet — run score_products.py to get a score.'}
+            : 'Product ASIN: ' + esc(p.asin) + ' · ' + esc(p.category)}
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0;">
           <button class="btn-small" onclick="window.open('https://amazon.co.uk/dp/${esc(p.asin)}','_blank')">

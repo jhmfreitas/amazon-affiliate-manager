@@ -192,8 +192,13 @@ def get_affiliate_url(asin, fallback_url=None):
 
 # ── 3. Generate pin candidates with Gemini ───────────────────
 
-def generate_candidates(product, n):
-    prompt = f"""You are a Pinterest affiliate marketing expert.
+def generate_candidates(product, n, pinterest_keywords=None):
+    keyword_block = ""
+    if pinterest_keywords:
+        keyword_block = f"""\n\nREAL PINTEREST SEARCH DATA — These are phrases people actually search.
+You MUST weave these naturally into your titles and descriptions:
+{json.dumps(pinterest_keywords[:20], indent=2)}\n"""
+    prompt = f"""You are a Pinterest SEO and affiliate marketing expert.
 Generate {n} UNIQUE high-converting Pinterest pin candidates for this product.
 
 Product:  {product['name']}
@@ -201,11 +206,17 @@ Niche:    {product['niche']}
 Audience: {product['audience']}
 Category: {product['category']}
 
+IMPORTANT CONTEXT: Pinterest is a visual SEARCH ENGINE. Users discover content
+by searching keywords. Hashtags are DEAD on Pinterest — do NOT use them.
+The algorithm ranks pins by keyword relevance in title + description + alt_text.
+{keyword_block}
+
 Return ONLY a valid JSON array, no markdown:
 [{{
-  "title":         "max 100 chars, pain-point hook, keyword-rich for Pinterest SEO",
-  "description":   "150-200 words, first-person, conversational, ends with soft CTA",
-  "hashtags":      ["12 tags", "no # prefix", "mix broad and niche"],
+  "title":         "max 100 chars. FRONT-LOAD the primary search keyword phrase, then add a hook. Example: 'Standing Desk Setup Ideas — Why I Never Sit At Work Anymore'",
+  "description":   "400-490 characters of natural, keyword-rich copy. Write like a helpful friend. Weave in 4-6 related search phrases naturally. Front-load the most important keyword in the first 50 characters (mobile users see this first). End with a soft CTA. NO hashtags.",
+  "alt_text":      "max 490 characters. Describe what the image shows for accessibility. Naturally include 2-3 relevant keywords.",
+  "keywords":      ["6-8 Pinterest search phrases people actually type", "long-tail phrases like 'best standing desk for small home office'", "mix of broad and specific"],
   "pexels_search": "2-4 word lifestyle scene query, NOT the product name",
   "hook_type":     "one of: pain_point | curiosity | social_proof | listicle | urgency"
 }}]
@@ -213,8 +224,14 @@ Return ONLY a valid JSON array, no markdown:
 Rules:
 - Every pin MUST have a different hook_type and angle
 - Never mention the brand name — focus on the lifestyle benefit
-- Pinterest SEO: include keywords people actually search for
-- The soft CTA should feel natural, not salesy"""
+- Title: ALWAYS start with the primary search keyword phrase, then add the emotional hook
+- Description: Write flowing, readable sentences — NOT keyword lists. Think blog intro style.
+- Description: First 50 characters must contain your #1 keyword (mobile truncation)
+- Description: MUST be 400-490 characters. Count carefully. This is CHARACTERS not words.
+- alt_text: Describe the lifestyle image scene, weave in keywords naturally
+- keywords: These are for internal reference only — phrases people search on Pinterest
+- The soft CTA should feel natural, not salesy
+- ZERO hashtags anywhere. They hurt Pinterest SEO."""
 
     text = gemini_call(prompt)
     text = text.replace("```json", "").replace("```", "").strip()
@@ -224,14 +241,16 @@ Rules:
 # ── 4. Score candidates with Gemini ──────────────────────────
 
 def score_candidates(candidates, product):
-    prompt = f"""You are a Pinterest conversion expert.
+    prompt = f"""You are a Pinterest SEO and conversion expert.
 Score each pin candidate for this product: {product['name']}
 
 Score 1-10 on:
-- Hook strength (stops the scroll)
-- Keyword density (Pinterest SEO)
+- Keyword front-loading (do the first 50 chars contain the primary search term?)
+- Keyword coverage (are 4-6 related search phrases woven into the description naturally?)
+- Hook strength (does the title stop the scroll?)
 - Emotional resonance with audience: {product['audience']}
 - CTA clarity and naturalness
+- Description readability (flows like natural language, not keyword stuffing)
 
 Candidates:
 {json.dumps(candidates, indent=2)}
@@ -296,27 +315,66 @@ def upload_image(pexels_url):
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{file_name}"
 
 
-# ── 7. Save pin to Supabase ──────────────────────────────────
+# ── 7. Board mapping by category ─────────────────────────────
 
-def save_pin(pin, product, affiliate_url):
+# Maps product categories to the most relevant Pinterest board.
+# IDs from your PinNPurchase account boards.
+BOARD_MAP = {
+    "home office":     "1128785162794453530",   # Desk Setup & WFH Tools
+    "desk":            "1128785162794453530",   # Desk Setup & WFH Tools
+    "standing desk":   "1128785162794453530",   # Desk Setup & WFH Tools
+    "kitchen":         "1128785162794432309",   # Amazon Kitchen Finds
+    "kitchen_dining":  "1128785162794432309",   # Amazon Kitchen Finds
+    "home_kitchen":    "1128785162794432309",   # Amazon Kitchen Finds
+    "home":            "1128785162794432647",   # Budget Home Upgrades
+    "home_improvement":"1128785162794432647",   # Budget Home Upgrades
+    "furniture":       "1128785162794432647",   # Budget Home Upgrades
+    "garden":          "1128785162794432647",   # Budget Home Upgrades
+    "fitness":         "1128785162794443172",   # Fitness & Gym Essentials
+    "gym":             "1128785162794443172",   # Fitness & Gym Essentials
+    "sports":          "1128785162794443172",   # Fitness & Gym Essentials
+    "sports_fitness":  "1128785162794443172",   # Fitness & Gym Essentials
+    "tech":            "1128785162794246403",   # Tech
+    "electronics":     "1128785162794246403",   # Tech
+    "travel":          "1128785162794244746",   # Travel
+    "luggage":         "1128785162794244746",   # Travel
+    "gifts":           "1128785162794136690",   # Gift Ideas
+    "beauty":          "1128785162794136690",   # Gift Ideas
+    "fashion":         "1128785162794136690",   # Gift Ideas
+}
+DEFAULT_BOARD = "1128785162794453906"           # Amazon Must-Haves UK
+
+def get_board_for_product(product):
+    """Pick the best board ID for a product based on category/niche."""
+    cat   = (product.get("category") or "").lower().replace(" ", "_")
+    niche = (product.get("niche") or "").lower().replace(" ", "_")
+    return BOARD_MAP.get(cat) or BOARD_MAP.get(niche) or DEFAULT_BOARD
+
+
+# ── 8. Save pin to Supabase ──────────────────────────────────
+
+def save_pin(pin, product, affiliate_url, board_id):
+    row = {
+        "title":         pin["title"],
+        "description":   pin["description"],
+        "alt_text":      pin.get("alt_text", ""),
+        "hashtags":      pin.get("keywords", []),   # stored in hashtags column for backward compat
+        "pexels_search": pin["pexels_search"],
+        "hook_type":     pin.get("hook_type", ""),
+        "score":         pin.get("score", 0),
+        "score_reason":  pin.get("score_reason", ""),
+        "image_url":     pin["image_url"],
+        "photographer":  pin.get("photographer", ""),
+        "link_url":      affiliate_url or "",
+        "product_id":    product["id"],
+        "board_id":      board_id,
+        "approved":      False,
+        "posted":        False
+    }
     resp = requests.post(
         f"{SUPABASE_URL}/rest/v1/pins",
         headers=SUPABASE_HEADERS,
-        json={
-            "title":         pin["title"],
-            "description":   pin["description"],
-            "hashtags":      pin["hashtags"],
-            "pexels_search": pin["pexels_search"],
-            "hook_type":     pin.get("hook_type", ""),
-            "score":         pin.get("score", 0),
-            "score_reason":  pin.get("score_reason", ""),
-            "image_url":     pin["image_url"],
-            "photographer":  pin.get("photographer", ""),
-            "link_url":      affiliate_url or "",
-            "product_id":    product["id"],
-            "approved":      False,
-            "posted":        False
-        }
+        json=row
     )
     resp.raise_for_status()
     return resp.json()[0]
@@ -339,6 +397,17 @@ if __name__ == "__main__":
         fallback_url = product.get("affiliate_url")
     )
 
+    # Get the Pinterest keywords researched during product scoring
+    pinterest_keywords = product.get("pinterest_keywords")
+    if pinterest_keywords:
+        print(f"\nLoaded {len(pinterest_keywords)} Pinterest search keywords from DB")
+    else:
+        print(f"\nWarning: No Pinterest keywords found for product in DB")
+
+    # Pick the right board for this product's category
+    board_id = get_board_for_product(product)
+    print(f"Board ID: {board_id}")
+
     print(f"\nGenerating {SLOTS} slots × {CANDIDATES} candidates, "
           f"keeping top {KEEP_TOP} each\n")
 
@@ -347,10 +416,10 @@ if __name__ == "__main__":
     for slot in range(SLOTS):
         print(f"── Slot {slot + 1}/{SLOTS} ──")
 
-        # 3. Generate candidates
+        # 3. Generate candidates with real keyword data
         print(f"  Generating {CANDIDATES} candidates...")
         try:
-            candidates = generate_candidates(product, CANDIDATES)
+            candidates = generate_candidates(product, CANDIDATES, pinterest_keywords)
         except Exception as e:
             print(f"  Generation failed: {e} — skipping slot")
             continue
@@ -387,7 +456,7 @@ if __name__ == "__main__":
 
             # Save pin row
             try:
-                saved = save_pin(pin, product, affiliate_url)
+                saved = save_pin(pin, product, affiliate_url, board_id)
                 all_saved.append(saved)
                 print(f"  Saved pin id={saved['id']}")
             except Exception as e:
