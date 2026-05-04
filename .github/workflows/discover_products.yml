@@ -21,6 +21,9 @@ jobs:
 
       - name: Discover products and store them
         env:
-          SUPABASE_URL:            ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:            ${{ secrets.SUPABASE_KEY }}
-        run: python scripts/discover_products.py
+          SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:             ${{ secrets.SUPABASE_KEY }}
+          AMAZON_CREDENTIAL_ID:     ${{ secrets.AMAZON_CREDENTIAL_ID }}
+          AMAZON_CREDENTIAL_SECRET: ${{ secrets.AMAZON_CREDENTIAL_SECRET }}
+          AMAZON_ASSOCIATE_TAG:     ${{ secrets.AMAZON_ASSOCIATE_TAG }}
+        run: python scripts/discover_products_v2.py

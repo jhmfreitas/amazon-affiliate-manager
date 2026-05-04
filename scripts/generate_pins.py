@@ -11,8 +11,9 @@ Runs weekly (Monday 9am UTC, after score_products.py).
 6. Saves all pins to Supabase with link_url and product_id
 """
 
-import os, json, random, uuid, time, requests
+import os, json, random, uuid, time, requests, io
 from datetime import datetime, timezone
+from PIL import Image, ImageDraw, ImageFont
 
 # ── Secrets ──────────────────────────────────────────────────
 GEMINI_KEY      = os.environ["GEMINI_API_KEY"]
@@ -290,10 +291,58 @@ def get_pexels_image(query):
     return photo["src"]["large2x"], photo["photographer"]
 
 
+# ── 5.5 Create Moodboard Collage ──────────────────────────────
+
+def create_moodboard(bg_url, product_url, title):
+    """
+    Downloads the aesthetic Pexels background and the Amazon product image,
+    resizes the background to 1000x1500 (Pinterest ratio),
+    and pastes the product image in the center.
+    Returns JPEG image bytes.
+    """
+    # 1. Download Background (Pexels)
+    bg_resp = requests.get(bg_url, timeout=20)
+    bg_resp.raise_for_status()
+    bg = Image.open(io.BytesIO(bg_resp.content)).convert("RGBA")
+    
+    # 2. Resize Background (Cover 1000x1500)
+    target_ratio = 1000 / 1500
+    bg_ratio = bg.width / bg.height
+    if bg_ratio > target_ratio:
+        # Too wide -> crop sides
+        new_width = int(target_ratio * bg.height)
+        offset = (bg.width - new_width) // 2
+        bg = bg.crop((offset, 0, offset + new_width, bg.height))
+    else:
+        # Too tall -> crop top/bottom
+        new_height = int(bg.width / target_ratio)
+        offset = (bg.height - new_height) // 2
+        bg = bg.crop((0, offset, bg.width, offset + new_height))
+        
+    bg = bg.resize((1000, 1500), Image.Resampling.LANCZOS)
+    
+    # 3. Download Product Image (Amazon)
+    prod_resp = requests.get(product_url, timeout=20)
+    prod_resp.raise_for_status()
+    prod = Image.open(io.BytesIO(prod_resp.content)).convert("RGBA")
+    
+    # 4. Resize Product Image (fit within 800x800)
+    prod.thumbnail((800, 800), Image.Resampling.LANCZOS)
+    
+    # 5. Paste Product onto Background (centered)
+    x = (1000 - prod.width) // 2
+    y = (1500 - prod.height) // 2
+    bg.paste(prod, (x, y), prod) # use prod as mask to preserve transparency
+    
+    # Return as JPEG bytes
+    out = io.BytesIO()
+    bg.convert("RGB").save(out, format="JPEG", quality=90)
+    return out.getvalue()
+
+
 # ── 6. Upload image to Supabase Storage ──────────────────────
 
-def upload_image(pexels_url):
-    img_data  = requests.get(pexels_url, timeout=20).content
+def upload_image(img_bytes):
     file_name = f"{uuid.uuid4()}.jpg"
     bucket    = "pin-images"
 
@@ -305,7 +354,7 @@ def upload_image(pexels_url):
             "Content-Type":  "image/jpeg",
             "x-upsert":      "true"
         },
-        data=img_data
+        data=img_bytes
     )
 
     if not upload_resp.ok:
@@ -445,10 +494,20 @@ if __name__ == "__main__":
                 print(f"  No image found for '{pin['pexels_search']}' — skipping")
                 continue
 
-            # Upload to Supabase Storage
+            # Create Moodboard
+            print(f"  Creating Moodboard...")
+            try:
+                # Fallback to a blank image URL if none exists in DB yet
+                amazon_url = product.get("image_url") or "https://via.placeholder.com/800"
+                moodboard_bytes = create_moodboard(pexels_url, amazon_url, pin["title"])
+            except Exception as e:
+                print(f"  Moodboard creation failed: {e} — skipping")
+                continue
+
+            # Upload Moodboard to Supabase Storage
             print(f"  Uploading image to Supabase...")
             try:
-                pin["image_url"]    = upload_image(pexels_url)
+                pin["image_url"]    = upload_image(moodboard_bytes)
                 pin["photographer"] = photographer
             except Exception as e:
                 print(f"  Upload failed: {e} — skipping")
