@@ -92,7 +92,7 @@ def discover_products(keywords, niche):
     api = AmazonCreatorsApi(
         credential_id=AMAZON_CRED_ID.strip(),
         credential_secret=AMAZON_CRED_SEC.strip(),
-        version="2.2",
+        version="3.2",
         tag=AMAZON_TAG.strip(),
         country="UK",
         throttling=1.5

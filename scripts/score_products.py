@@ -249,6 +249,73 @@ def get_pinterest_saves(product_id, auth: PinterestAuth):
         return 0
 
 
+# ── 4.5. Keyword research ─ Google autocomplete + Gemini ─────
+
+def google_autocomplete(query, lang="en", country="uk"):
+    try:
+        resp = requests.get(
+            "https://suggestqueries.google.com/complete/search",
+            params={"client": "firefox", "q": query, "hl": lang, "gl": country},
+            timeout=5
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data[1] if len(data) > 1 else []
+    except Exception as e:
+        print(f"  Google autocomplete failed for '{query}': {e}")
+        return []
+
+def research_keywords(product):
+    name     = product["name"]
+    niche    = product.get("niche", "")
+    category = product["category"]
+    audience = product.get("audience", "")
+
+    # Build seed queries
+    seeds = [
+        f"{niche} ideas pinterest",
+        f"best {category} {niche}",
+        f"{niche} aesthetic",
+        f"{category} setup ideas",
+        f"{niche} for {audience.split(',')[0].strip() if audience else 'everyone'}",
+        f"{category} must haves",
+    ]
+
+    print(f"  Researching Pinterest keywords...")
+    all_suggestions = []
+    for seed in seeds:
+        suggestions = google_autocomplete(seed)
+        all_suggestions.extend(suggestions)
+        time.sleep(0.3)
+
+    unique = list(dict.fromkeys(all_suggestions))[:40]
+
+    prompt = f"""You are a Pinterest SEO keyword expert.
+
+Product: {name}
+Niche: {niche} | Category: {category} | Audience: {audience}
+
+Real Google autocomplete suggestions:
+{json.dumps(unique, indent=2)}
+
+Generate a refined list of 15-25 Pinterest-optimized keyword phrases.
+Return ONLY a JSON array of strings, no markdown.
+"""
+    resp = requests.post(
+        GEMINI_URL,
+        json={"contents": [{"parts": [{"text": prompt}]}]}
+    )
+    resp.raise_for_status()
+    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    text = text.replace("```json", "").replace("```", "").strip()
+    try:
+        keywords = json.loads(text)
+        print(f"  Found {len(keywords)} Pinterest keywords")
+        return keywords
+    except:
+        return unique[:20]
+
+
 # ── 5. Gemini scoring engine ─────────────────────────────────
 
 def score_products_with_gemini(products_data):
@@ -338,7 +405,14 @@ if __name__ == "__main__":
         bsr                    = get_amazon_bsr(p["asin"])
         trend_score, trend_dir = get_trend_score(p["name"])
         saves                  = get_pinterest_saves(p["id"], auth)
-        keywords               = p.get("pinterest_keywords", [])
+        keywords               = p.get("pinterest_keywords")
+        if not keywords:
+            keywords = research_keywords(p)
+            # Save keywords to DB for generate_pins to use
+            try:
+                supabase_patch(f"products?id=eq.{p['id']}", {"pinterest_keywords": keywords})
+            except Exception as e:
+                print(f"  Warning: failed to save keywords: {e}")
         commission             = p.get("commission") or COMMISSION_RATES.get(
                                    p.get("category", "").lower(),
                                    COMMISSION_RATES["default"]

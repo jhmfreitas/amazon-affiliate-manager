@@ -26,4 +26,4 @@ jobs:
           AMAZON_CREDENTIAL_ID:     ${{ secrets.AMAZON_CREDENTIAL_ID }}
           AMAZON_CREDENTIAL_SECRET: ${{ secrets.AMAZON_CREDENTIAL_SECRET }}
           AMAZON_ASSOCIATE_TAG:     ${{ secrets.AMAZON_ASSOCIATE_TAG }}
-        run: python scripts/discover_products_v2.py
+        run: python scripts/discover_products.py
