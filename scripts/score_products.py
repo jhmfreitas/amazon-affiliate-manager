@@ -16,6 +16,7 @@ Top-scored product is then picked by generate_pins.py.
 import os, json, time, re, requests
 from datetime import datetime, timezone
 from pinterest_auth import PinterestAuth
+from config import supabase_patch
 
 # ── Secrets ──────────────────────────────────────────────────
 GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
@@ -301,19 +302,30 @@ Real Google autocomplete suggestions:
 Generate a refined list of 15-25 Pinterest-optimized keyword phrases.
 Return ONLY a JSON array of strings, no markdown.
 """
-    resp = requests.post(
-        GEMINI_URL,
-        json={"contents": [{"parts": [{"text": prompt}]}]}
-    )
-    resp.raise_for_status()
-    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-    text = text.replace("```json", "").replace("```", "").strip()
-    try:
-        keywords = json.loads(text)
-        print(f"  Found {len(keywords)} Pinterest keywords")
-        return keywords
-    except:
-        return unique[:20]
+    time.sleep(4) # Respect Gemini free tier rate limit
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                GEMINI_URL,
+                json={"contents": [{"parts": [{"text": prompt}]}]}
+            )
+            resp.raise_for_status()
+            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+            text = text.replace("```json", "").replace("```", "").strip()
+            keywords = json.loads(text)
+            print(f"  Found {len(keywords)} Pinterest keywords")
+            return keywords
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                print(f"  Gemini rate limit hit. Retrying in 10s... (Attempt {attempt + 1}/3)")
+                time.sleep(10)
+            else:
+                break
+        except Exception as e:
+            break
+            
+    print(f"  Falling back to raw unique suggestions...")
+    return unique[:20]
 
 
 # ── 5. Gemini scoring engine ─────────────────────────────────
