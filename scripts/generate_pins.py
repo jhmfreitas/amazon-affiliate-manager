@@ -369,27 +369,29 @@ def upload_image(img_bytes):
 # Maps product categories to the most relevant Pinterest board.
 # IDs from your PinNPurchase account boards.
 BOARD_MAP = {
-    "home office":     "1128785162794453530",   # Desk Setup & WFH Tools
-    "desk":            "1128785162794453530",   # Desk Setup & WFH Tools
-    "standing desk":   "1128785162794453530",   # Desk Setup & WFH Tools
-    "kitchen":         "1128785162794432309",   # Amazon Kitchen Finds
-    "kitchen_dining":  "1128785162794432309",   # Amazon Kitchen Finds
-    "home_kitchen":    "1128785162794432309",   # Amazon Kitchen Finds
-    "home":            "1128785162794432647",   # Budget Home Upgrades
-    "home_improvement":"1128785162794432647",   # Budget Home Upgrades
-    "furniture":       "1128785162794432647",   # Budget Home Upgrades
-    "garden":          "1128785162794432647",   # Budget Home Upgrades
-    "fitness":         "1128785162794443172",   # Fitness & Gym Essentials
-    "gym":             "1128785162794443172",   # Fitness & Gym Essentials
-    "sports":          "1128785162794443172",   # Fitness & Gym Essentials
-    "sports_fitness":  "1128785162794443172",   # Fitness & Gym Essentials
-    "tech":            "1128785162794246403",   # Tech
-    "electronics":     "1128785162794246403",   # Tech
-    "travel":          "1128785162794244746",   # Travel
-    "luggage":         "1128785162794244746",   # Travel
-    "gifts":           "1128785162794136690",   # Gift Ideas
-    "beauty":          "1128785162794136690",   # Gift Ideas
-    "fashion":         "1128785162794136690",   # Gift Ideas
+    # Category/niche → Pinterest board ID
+    "home office":      "1128785162795137658",  # Home Office Setup Ideas
+    "desk":             "1128785162795137658",  # Home Office Setup Ideas
+    "standing desk":    "1128785162795137658",  # Home Office Setup Ideas
+    "aesthetic desk":   "1128785162795137662",  # Aesthetic Desk Setup
+    "kitchen":          "1128785162795137663",  # Kitchen Gadgets Worth It
+    "kitchen_dining":   "1128785162795137663",  # Kitchen Gadgets Worth It
+    "home_kitchen":     "1128785162795137663",  # Kitchen Gadgets Worth It
+    "sports":           "1128785162795137664",  # Fitness Gear for Home Workouts
+    "fitness":          "1128785162795137664",  # Fitness Gear for Home Workouts
+    "gym":              "1128785162795137664",  # Fitness Gear for Home Workouts
+    "sports_fitness":   "1128785162795137664",  # Fitness Gear for Home Workouts
+    "beauty":           "1128785162795137666",  # Skincare Routine Essentials
+    "fashion":          "1128785162795137672",  # Fashion Finds Under £50
+    "gifts":            "1128785162795137670",  # Gifts for Her
+    "home":             "1128785162794432647",  # Budget Home Upgrades
+    "home_improvement": "1128785162794432647",  # Budget Home Upgrades
+    "furniture":        "1128785162794432647",  # Budget Home Upgrades
+    "garden":           "1128785162794432647",  # Budget Home Upgrades
+    "tech":             "1128785162794246403",  # Tech
+    "electronics":      "1128785162794246403",  # Tech
+    "travel":           "1128785162794244746",  # Travel
+    "luggage":          "1128785162794244746",  # Travel
 }
 DEFAULT_BOARD = "1128785162794453906"           # Amazon Must-Haves UK
 
