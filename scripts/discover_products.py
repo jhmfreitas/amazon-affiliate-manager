@@ -12,7 +12,8 @@ Improvements over v1:
 - Proper error logging instead of silent swallows
 """
 
-import os, re, json, time, requests
+import os, re, json, time, requests, random
+from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 from config import (
     log, random_headers, get_amazon_cookies, get_commission, MIN_PRICE,
@@ -154,6 +155,77 @@ def fetch_price_from_page(asin):
     return None
 
 
+# ── FETCH IMAGE FROM PRODUCT PAGE ──────────────────
+def scrape_product_image(asin):
+    """Fetch high-res product image directly from Amazon product page with retries."""
+    for attempt in range(1, 4):  # 3 attempts per product
+        try:
+            headers = random_headers()
+            headers["Referer"] = "https://www.amazon.co.uk/"
+            
+            resp = requests.get(
+                f"https://www.amazon.co.uk/dp/{asin}", 
+                headers=headers, 
+                cookies=get_amazon_cookies(),
+                timeout=12
+            )
+            
+            if resp.status_code == 200:
+                if "api-services-support@amazon.com" in resp.text or "To discuss automated access" in resp.text:
+                    if attempt < 3:
+                        wait = random.uniform(5, 10)
+                        log.warning(f"  Attempt {attempt} blocked (CAPTCHA) for {asin}. Retrying in {wait:.1f}s...")
+                        time.sleep(wait)
+                        continue
+                    else:
+                        log.warning(f"  Final attempt blocked by Amazon (CAPTCHA) for {asin}")
+                        return None
+                
+                soup = BeautifulSoup(resp.text, "html.parser")
+                
+                # Try multiple selectors for the main image
+                img = soup.select_one("#landingImage") or \
+                      soup.select_one("#imgBlkFront") or \
+                      soup.select_one("#main-image") or \
+                      soup.select_one("img[data-old-hires]") or \
+                      soup.select_one("img[data-a-dynamic-image]")
+                
+                if img:
+                    # 1. Priority: data-old-hires
+                    hires = img.get("data-old-hires")
+                    if hires and not hires.startswith("data:"):
+                        return hires
+                    
+                    # 2. Dynamic image JSON parsing
+                    dynamic = img.get("data-a-dynamic-image")
+                    if dynamic:
+                        try:
+                            urls = json.loads(dynamic)
+                            # Pick the largest version
+                            best_url = max(urls.keys(), key=lambda k: urls[k][0] * urls[k][1])
+                            return best_url
+                        except:
+                            pass
+                    
+                    # 3. Fallback to src
+                    src = img.get("src")
+                    if src and not src.startswith("data:"):
+                        return src
+                        
+            elif resp.status_code == 404:
+                log.warning(f"  Product {asin} not found (404)")
+                return None
+            else:
+                log.warning(f"  Attempt {attempt} failed for {asin}: Status {resp.status_code}")
+                time.sleep(2)
+
+        except Exception as e:
+            log.warning(f"  Attempt {attempt} error for {asin}: {e}")
+            time.sleep(2)
+            
+    return None
+
+
 # ── BACKFILL PRICES FOR EXISTING PRODUCTS ──────────
 def backfill_prices():
     """
@@ -186,6 +258,43 @@ def backfill_prices():
             log.warning(f"  Could not find price for {p['asin']}: {p['name'][:50]}")
 
         time.sleep(1)  # be nice to Amazon
+
+    return updated
+
+
+# ── BACKFILL IMAGES FOR EXISTING PRODUCTS ──────────
+def backfill_images():
+    """
+    Update existing products that have null image_url.
+    Fetches image from Amazon product page for each.
+    """
+    products = supabase_get("products", params={
+        "active": "eq.true",
+        "image_url": "is.null",
+        "select": "id,asin,name"
+    })
+
+    if not products:
+        log.info("No products need image backfill.")
+        return 0
+
+    log.info(f"Backfilling images for {len(products)} products...")
+    updated = 0
+
+    for p in products:
+        img_url = scrape_product_image(p["asin"])
+        if img_url:
+            try:
+                supabase_patch(f"products?id=eq.{p['id']}", {"image_url": img_url})
+                log.info(f"  {p['name'][:50]} → image found")
+                updated += 1
+            except Exception as e:
+                log.warning(f"  Failed to update image for {p['asin']}: {e}")
+        else:
+            # scrape_product_image already logs CAPTCHAs/404s
+            pass
+
+        time.sleep(random.uniform(2, 5))  # slowed down to avoid bot detection
 
     return updated
 
@@ -399,29 +508,94 @@ def _default_classification(category):
     return defaults.get(category, {"niche": category.replace("_", " "), "audience": "shoppers interested in quality products"})
 
 
+# ── DEMAND KEYWORDS (GOOGLE AUTOCOMPLETE) ──────────
+def google_autocomplete(query, lang="en", country="uk"):
+    """Fetch autocomplete suggestions from Google."""
+    try:
+        resp = requests.get(
+            "https://suggestqueries.google.com/complete/search",
+            params={"client": "firefox", "q": query, "hl": lang, "gl": country},
+            timeout=5
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data[1] if len(data) > 1 else []
+    except Exception as e:
+        log.warning(f"  Google autocomplete failed for '{query}': {e}")
+        return []
+
+def get_demand_keywords(niche_name):
+    """Get high-intent Pinterest search keywords for a niche."""
+    log.info(f"  Researching demand for niche: {niche_name}")
+    seeds = [
+        f"{niche_name} ideas pinterest",
+        f"best {niche_name}",
+        f"{niche_name} aesthetic",
+        f"{niche_name} must haves",
+    ]
+    
+    all_suggestions = []
+    for seed in seeds:
+        suggestions_uk = google_autocomplete(seed, country="uk")
+        suggestions_us = google_autocomplete(seed, country="us")
+        all_suggestions.extend(suggestions_uk + suggestions_us)
+        time.sleep(0.3)
+        
+    unique = list(dict.fromkeys(all_suggestions))
+    
+    # Clean up (remove "pinterest" from the search term)
+    clean_keywords = [k.replace(" pinterest", "").replace(" ideas", "").strip() for k in unique]
+    clean_keywords = list(dict.fromkeys(clean_keywords))[:8] # Top 8 distinct searches (Gap 3)
+    
+    if clean_keywords:
+        log.info(f"  Found {len(clean_keywords)} high-intent searches: {clean_keywords}")
+    else:
+        log.info(f"  No keywords found for niche: {niche_name}")
+        
+    return clean_keywords
+
+
 # ── INSERT INTO SUPABASE ───────────────────────────
 def insert_products(products, category, classifications):
     inserted = 0
     commission = get_commission(category)
+    
+    # Cache keywords per niche to avoid redundant Google calls
+    niche_keywords_cache = {}
 
     for p in products:
         # Use Gemini classification or fallback
         cls = classifications.get(p["asin"], _default_classification(category))
+        niche_name = cls["niche"]
+        
+        if niche_name not in niche_keywords_cache:
+            niche_keywords_cache[niche_name] = get_demand_keywords(niche_name)
+            
+        keywords = niche_keywords_cache[niche_name]
 
         payload = {
             "asin": p["asin"],
             "name": p["name"],
             "category": category,
-            "niche": cls["niche"],
+            "niche": niche_name,
             "audience": cls["audience"],
             "commission": commission,
             "affiliate_url": f"https://www.amazon.co.uk/dp/{p['asin']}?tag={AMAZON_TAG}&linkCode=ll2",
             "active": True,
         }
+        
+        if keywords:
+            payload["pinterest_keywords"] = keywords
+            payload["keywords_last_updated_at"] = datetime.now(timezone.utc).isoformat()
 
         # Add price if scraped
         if p.get("price") is not None:
             payload["price"] = p["price"]
+
+        # Scrape product image
+        img_url = scrape_product_image(p["asin"])
+        if img_url:
+            payload["image_url"] = img_url
 
         try:
             supabase_post("products", payload)
@@ -467,10 +641,13 @@ if __name__ == "__main__":
     # Backfill prices for any existing products that have null price
     backfilled = backfill_prices()
 
+    # Backfill images for any existing products that have null image
+    images_backfilled = backfill_images()
+
     # Sync commissions for existing products
     commissions_synced = sync_commissions()
 
     # Backfill affiliate links
     links_backfilled = backfill_affiliate_urls()
 
-    log.info(f"=== DONE — {total_new} new products, {backfilled} prices backfilled, {links_backfilled} links backfilled, {commissions_synced} commissions synced ===")
+    log.info(f"=== DONE — {total_new} new products, {backfilled} prices backfilled, {images_backfilled} images backfilled, {links_backfilled} links backfilled, {commissions_synced} commissions synced ===")

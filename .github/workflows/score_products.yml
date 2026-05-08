@@ -1,4 +1,4 @@
-name: Score products weekly
+name: Score products
 
 on:
   workflow_dispatch:          # run manually anytime

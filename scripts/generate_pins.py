@@ -215,7 +215,7 @@ The algorithm ranks pins by keyword relevance in title + description + alt_text.
 Return ONLY a valid JSON array, no markdown:
 [{{
   "title":         "max 100 chars. FRONT-LOAD the primary search keyword phrase, then add a hook. Example: 'Standing Desk Setup Ideas — Why I Never Sit At Work Anymore'",
-  "description":   "400-490 characters of natural, keyword-rich copy. Write like a helpful friend. Weave in 4-6 related search phrases naturally. Front-load the most important keyword in the first 50 characters (mobile users see this first). End with a soft CTA. NO hashtags.",
+  "description":   "Max 500 characters. Think of this as two sections: The first 75 chars are the HOOK (what users see in the feed) — front-load your absolute best keywords here naturally. The next 425 chars are the BODY (what users read when they click) — weave in 4-6 related search phrases naturally. End with a soft CTA. NO hashtags.",
   "alt_text":      "max 490 characters. Describe what the image shows for accessibility. Naturally include 2-3 relevant keywords.",
   "keywords":      ["6-8 Pinterest search phrases people actually type", "long-tail phrases like 'best standing desk for small home office'", "mix of broad and specific"],
   "pexels_search": "2-4 word lifestyle scene query, NOT the product name",
@@ -226,9 +226,8 @@ Rules:
 - Every pin MUST have a different hook_type and angle
 - Never mention the brand name — focus on the lifestyle benefit
 - Title: ALWAYS start with the primary search keyword phrase, then add the emotional hook
-- Description: Write flowing, readable sentences — NOT keyword lists. Think blog intro style.
-- Description: First 50 characters must contain your #1 keyword (mobile truncation)
-- Description: MUST be 400-490 characters. Count carefully. This is CHARACTERS not words.
+- Description: Write flowing, readable sentences — NOT keyword lists.
+- Description: First 75 characters MUST contain your #1 keyword phrase.
 - alt_text: Describe the lifestyle image scene, weave in keywords naturally
 - keywords: These are for internal reference only — phrases people search on Pinterest
 - The soft CTA should feel natural, not salesy
@@ -236,7 +235,14 @@ Rules:
 
     text = gemini_call(prompt)
     text = text.replace("```json", "").replace("```", "").strip()
-    return json.loads(text)
+    candidates = json.loads(text)
+    
+    # Enforce hard truncation at 490 chars (Gap 1)
+    for c in candidates:
+        if "description" in c:
+            c["description"] = c["description"][:490]
+            
+    return candidates
 
 
 # ── 4. Score candidates with Gemini ──────────────────────────
@@ -297,9 +303,12 @@ def create_moodboard(bg_url, product_url, title):
     """
     Downloads the aesthetic Pexels background and the Amazon product image,
     resizes the background to 1000x1500 (Pinterest ratio),
-    and pastes the product image in the center.
+    and places the product in a styled card with a shadow and gradient text overlay.
     Returns JPEG image bytes.
     """
+    from PIL import ImageFilter
+    import textwrap
+
     # 1. Download Background (Pexels)
     bg_resp = requests.get(bg_url, timeout=20)
     bg_resp.raise_for_status()
@@ -321,19 +330,79 @@ def create_moodboard(bg_url, product_url, title):
         
     bg = bg.resize((1000, 1500), Image.Resampling.LANCZOS)
     
+    # 2.5 Add subtle gradient overlay at the bottom for text readability
+    gradient = Image.new('RGBA', (1000, 1500), color=(0,0,0,0))
+    draw = ImageDraw.Draw(gradient)
+    for y in range(800, 1500):
+        alpha = int((y - 800) / 700 * 220)  # Fade to dark
+        draw.line([(0, y), (1000, y)], fill=(0, 0, 0, alpha))
+    bg = Image.alpha_composite(bg, gradient)
+
     # 3. Download Product Image (Amazon)
     prod_resp = requests.get(product_url, timeout=20)
     prod_resp.raise_for_status()
     prod = Image.open(io.BytesIO(prod_resp.content)).convert("RGBA")
     
-    # 4. Resize Product Image (fit within 800x800)
-    prod.thumbnail((800, 800), Image.Resampling.LANCZOS)
+    # 4. Resize Product Image
+    prod.thumbnail((600, 600), Image.Resampling.LANCZOS)
     
-    # 5. Paste Product onto Background (centered)
-    x = (1000 - prod.width) // 2
-    y = (1500 - prod.height) // 2
-    bg.paste(prod, (x, y), prod) # use prod as mask to preserve transparency
+    # 5. Create a styled card with a light shadow
+    card_padding = 60
+    card_w = prod.width + (card_padding * 2)
+    card_h = prod.height + (card_padding * 2)
+    card_x = (1000 - card_w) // 2
+    card_y = 250  # Positioned in the top half
     
+    # Shadow
+    shadow = Image.new('RGBA', bg.size, (0,0,0,0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_rect = [card_x + 10, card_y + 15, card_x + card_w + 10, card_y + card_h + 15]
+    shadow_draw.rounded_rectangle(shadow_rect, radius=30, fill=(0, 0, 0, 90))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(15))
+    bg = Image.alpha_composite(bg, shadow)
+    
+    # White Card
+    card = Image.new('RGBA', bg.size, (0,0,0,0))
+    card_draw = ImageDraw.Draw(card)
+    card_rect = [card_x, card_y, card_x + card_w, card_y + card_h]
+    card_draw.rounded_rectangle(card_rect, radius=30, fill=(255, 255, 255, 255))
+    bg = Image.alpha_composite(bg, card)
+    
+    # 6. Paste Product onto Card
+    prod_x = card_x + card_padding
+    prod_y = card_y + card_padding
+    bg.paste(prod, (prod_x, prod_y), prod) # use prod as mask
+    
+    # 7. Add text overlay
+    try:
+        font = ImageFont.truetype("arialbd.ttf", 64)
+    except IOError:
+        try:
+            font = ImageFont.truetype("segoeuib.ttf", 64)
+        except IOError:
+            font = ImageFont.load_default()
+            
+    draw = ImageDraw.Draw(bg)
+    lines = textwrap.wrap(title, width=28)
+    
+    # Center text in the bottom section
+    current_y = card_y + card_h + 80
+    
+    for line in lines:
+        if hasattr(font, "getbbox"):
+            bbox = font.getbbox(line)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+        elif hasattr(draw, "textbbox"):
+            bbox = draw.textbbox((0, 0), line, font=font)
+            w = bbox[2] - bbox[0]
+            h = bbox[3] - bbox[1]
+        else:
+            w, h = draw.textsize(line, font=font)
+            
+        draw.text(((1000 - w) // 2, current_y), line, font=font, fill=(255, 255, 255, 255))
+        current_y += h + 20
+        
     # Return as JPEG bytes
     out = io.BytesIO()
     bg.convert("RGB").save(out, format="JPEG", quality=90)
@@ -409,7 +478,7 @@ def save_pin(pin, product, affiliate_url, board_id):
         "title":         pin["title"],
         "description":   pin["description"],
         "alt_text":      pin.get("alt_text", ""),
-        "hashtags":      pin.get("keywords", []),   # stored in hashtags column for backward compat
+        "keywords":      pin.get("keywords", []),   # Proper keywords column (Gap 2)
         "pexels_search": pin["pexels_search"],
         "hook_type":     pin.get("hook_type", ""),
         "score":         pin.get("score", 0),
