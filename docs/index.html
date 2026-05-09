@@ -879,6 +879,14 @@ async function approve(id) {
   updateStats(); render(); toast('Approved — scheduled to post!');
 }
 
+async function unapprove(id) {
+  const { error } = await db.from('pins')
+    .update({ approved: false }).eq('id', id);
+  if (error) { toast('Error: ' + error.message); return; }
+  pins.find(p => p.id === id).approved = false;
+  updateStats(); render(); toast('Moved back to pending.');
+}
+
 // ── Post Now (Immediate trigger) ──────────────────────────────
 
 async function postNow(id) {
@@ -1098,6 +1106,13 @@ function render() {
     const status    = getStatus(pin);
     const isEditing = editingId === pin.id;
     const canEdit   = !pin.posted;
+    
+    // Determine if this is the "Up Next" pin
+    const upNextPin = pins
+      .filter(p => getStatus(p) === 'approved')
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+    const isUpNext = upNextPin && upNextPin.id === pin.id;
+
     const kwTags   = (pin.keywords || [])
       .map(t => `<span class="tag">${esc(t)}</span>`).join('');
 
@@ -1122,7 +1137,10 @@ function render() {
 
         <div class="content-panel">
           <div class="pin-top">
-            <span class="badge badge-${status}">${status}</span>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="badge badge-${status}">${status}</span>
+              ${isUpNext ? '<span class="badge" style="background:var(--blue);color:white;border:none;">UP NEXT</span>' : ''}
+            </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
               ${pin.score
                 ? `<span class="score-chip">${pin.score}/10</span>` : ''}
@@ -1277,7 +1295,8 @@ function render() {
               <button class="btn-secondary" onclick="startEdit(${pin.id})">Edit</button>
               ${pin.approved
                 ? `<div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
-                    <span style="font-size:12px;color:var(--green);font-weight:500;">Scheduled</span>
+                    <button class="btn-secondary" style="padding:6px 14px;font-size:11px;" 
+                      onclick="unapprove(${pin.id})">Move to Pending</button>
                     <button class="btn-approve" style="background:var(--text);padding:6px 14px;font-size:11px;" 
                       onclick="postNow(${pin.id})">Post Now</button>
                   </div>`
