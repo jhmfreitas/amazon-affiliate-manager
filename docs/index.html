@@ -365,13 +365,24 @@
   .product-grid { display: flex; flex-direction: column; gap: 12px; }
   .product-card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 18px 20px;
-    transition: border-color 0.15s;
+    border-radius: var(--radius-lg); padding: 0;
+    transition: border-color 0.15s; overflow: hidden;
+    display: grid; grid-template-columns: 120px 1fr;
   }
   .product-card:hover { border-color: var(--border2); }
+  .product-img-side {
+    background: var(--bg); border-right: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px;
+  }
+  .product-img-side img {
+    max-width: 100%; max-height: 140px; border-radius: 6px;
+    object-fit: contain; background: white;
+  }
+  .product-main-side { padding: 18px 20px; }
   .product-card-top {
     display: flex; justify-content: space-between;
-    align-items: flex-start; gap: 12px; margin-bottom: 14px;
+    align-items: flex-start; gap: 12px; margin-bottom: 12px;
   }
   .product-name { font-size: 15px; font-weight: 600; line-height: 1.3; }
   .product-asin {
@@ -389,7 +400,7 @@
   }
   .product-signals {
     display: grid; grid-template-columns: repeat(4, 1fr);
-    gap: 8px; margin-bottom: 14px;
+    gap: 8px; margin-bottom: 12px;
   }
   .signal {
     background: var(--bg); border-radius: 8px;
@@ -416,6 +427,20 @@
   .product-reason {
     font-size: 12px; color: var(--muted); flex: 1;
     font-style: italic; line-height: 1.5;
+  }
+  .product-keywords {
+    display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;
+  }
+  .keyword-tag {
+    font-size: 10px; background: var(--blue-bg); color: var(--blue);
+    padding: 2px 8px; border-radius: 4px; font-weight: 500;
+    border: 1px solid var(--blue-bd);
+  }
+  .bsr-tag {
+    font-size: 10px; background: var(--amber-bg); color: var(--amber);
+    padding: 2px 8px; border-radius: 4px; font-weight: 600;
+    border: 1px solid var(--amber-bd); display: inline-block;
+    margin-bottom: 8px;
   }
   .product-link-row {
     display: flex; align-items: center; gap: 8px;
@@ -466,8 +491,11 @@
     font-weight: 500; cursor: pointer;
   }
   @media (max-width: 640px) {
+    .product-card { grid-template-columns: 1fr; }
+    .product-img-side { border-right: none; border-bottom: 1px solid var(--border); }
     .product-signals { grid-template-columns: repeat(2, 1fr); }
   }
+
 </style>
 </head>
 <body>
@@ -1374,82 +1402,92 @@ function renderProducts() {
 
     return `
     <div class="product-card" style="${!p.active ? 'opacity:0.55;' : ''}">
-      <div class="product-card-top">
-        <div style="flex:1;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-            ${isTop  ? `<span class="top-badge">&#x2B50; This week&#39;s top pick</span>` : ""}
-            ${p.active ? '<span class="active-badge">Active</span>'
-                       : '<span class="paused-badge">Paused</span>'}
-            <span style="font-size:11px;color:var(--faint);font-family:'DM Mono',monospace;">
-              ${esc(p.category)} · ${p.commission}% commission
-            </span>
+      <div class="product-img-side">
+        <img src="${p.image_url || 'https://via.placeholder.com/150?text=No+Image'}" alt="product" />
+      </div>
+      <div class="product-main-side">
+        <div class="product-card-top">
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+              ${isTop  ? `<span class="top-badge">&#x2B50; This week&#39;s top pick</span>` : ""}
+              ${p.active ? '<span class="active-badge">Active</span>'
+                        : '<span class="paused-badge">Paused</span>'}
+              <span style="font-size:11px;color:var(--faint);font-family:'DM Mono',monospace;">
+                ${esc(p.category)} · ${p.commission}% commission
+              </span>
+            </div>
+            ${p.bsr_rank ? `<div class="bsr-tag">Rank: #${p.bsr_rank.toLocaleString()} in ${esc(p.category)}</div>` : ''}
+            <div class="product-name">${esc(p.name)}</div>
+            <div class="product-asin">ASIN: ${esc(p.asin)}</div>
+            <div class="product-keywords">
+              ${(p.pinterest_keywords || []).map(k => `<span class="keyword-tag">${esc(k)}</span>`).join('')}
+            </div>
           </div>
-          <div class="product-name">${esc(p.name)}</div>
-          <div class="product-asin">ASIN: ${esc(p.asin)}</div>
+          <div style="text-align:right;">
+            <div class="product-score-big">${p.score || 0}</div>
+            <div class="product-score-label">/100 score</div>
+            <div style="font-size:10px;color:var(--faint);margin-top:3px;
+              font-family:'DM Mono',monospace;">scored ${lastScored}</div>
+          </div>
         </div>
-        <div style="text-align:right;">
-          <div class="product-score-big">${p.score || 0}</div>
-          <div class="product-score-label">/100 score</div>
-          <div style="font-size:10px;color:var(--faint);margin-top:3px;
-            font-family:'DM Mono',monospace;">scored ${lastScored}</div>
-        </div>
-      </div>
 
-      <!-- Data signals grid -->
-      <div class="product-signals">
-        <div class="signal">
-          <div class="signal-label">Price & Payout</div>
-          <div class="signal-val">£${price.toFixed(2)}</div>
-          <div class="signal-sub">£${payout.toFixed(2)} comm.</div>
+        <!-- Data signals grid -->
+        <div class="product-signals">
+          <div class="signal">
+            <div class="signal-label">Price & Payout</div>
+            <div class="signal-val">£${price.toFixed(2)}</div>
+            <div class="signal-sub">£${payout.toFixed(2)} comm.</div>
+          </div>
+          <div class="signal">
+            <div class="signal-label">Trend</div>
+            <div class="signal-val ${trendCls}">${trendIcon} ${p.trend_score || 0}</div>
+            <div class="signal-sub">Δ${tDeltaStr}</div>
+          </div>
+          <div class="signal">
+            <div class="signal-label">Pinterest saves</div>
+            <div class="signal-val">${(p.pinterest_saves || 0).toLocaleString()}</div>
+            <div class="signal-sub">Δ${sDeltaStr}</div>
+          </div>
+          <div class="signal">
+            <div class="signal-label">Best Sellers Rank</div>
+            <div class="signal-val">#${p.bsr_rank ? p.bsr_rank.toLocaleString() : '–'}</div>
+            <div class="signal-sub">In ${esc(p.category)}</div>
+          </div>
         </div>
-        <div class="signal">
-          <div class="signal-label">Trend</div>
-          <div class="signal-val ${trendCls}">${trendIcon} ${p.trend_score || 0}</div>
-          <div class="signal-sub">Δ${tDeltaStr}</div>
-        </div>
-        <div class="signal">
-          <div class="signal-label">Pinterest saves</div>
-          <div class="signal-val">${(p.pinterest_saves || 0).toLocaleString()}</div>
-          <div class="signal-sub">Δ${sDeltaStr}</div>
-        </div>
-        <div class="signal">
-          <div class="signal-label">Commission</div>
-          <div class="signal-val">${p.commission || 0}%</div>
-          <div class="signal-sub">${esc(p.category)}</div>
-        </div>
-      </div>
 
-      <!-- Affiliate URL row -->
-      <div class="product-link-row">
-        <input id="prod-link-${p.id}"
-          value="${esc(p.affiliate_url || '')}"
-          placeholder="Paste Amazon affiliate URL for this product…" />
-        <button class="btn-small" onclick="saveProductLink(${p.id})">Save link</button>
-        ${p.affiliate_url ? `
-          <a href="${esc(p.affiliate_url)}" target="_blank" rel="noopener"
-            style="font-size:12px;color:var(--blue);text-decoration:none;white-space:nowrap;">
-            Open ↗
-          </a>` : ''}
-      </div>
-
-      <!-- Score reason + actions -->
-      <div class="product-footer">
-        <div class="product-reason">
-          ${p.score_reason
-            ? '💡 ' + esc(p.score_reason)
-            : 'Product ASIN: ' + esc(p.asin) + ' · ' + esc(p.category)}
+        <!-- Affiliate URL row -->
+        <div class="product-link-row">
+          <input id="prod-link-${p.id}"
+            value="${esc(p.affiliate_url || '')}"
+            placeholder="Paste Amazon affiliate URL for this product…" />
+          <button class="btn-small" onclick="saveProductLink(${p.id})">Save link</button>
+          ${p.affiliate_url ? `
+            <a href="${esc(p.affiliate_url)}" target="_blank" rel="noopener"
+              style="font-size:12px;color:var(--blue);text-decoration:none;white-space:nowrap;">
+              Open ↗
+            </a>` : ''}
         </div>
-        <div style="display:flex;gap:8px;flex-shrink:0;">
-          <button class="btn-small" onclick="window.open('https://amazon.co.uk/dp/${esc(p.asin)}','_blank')">
-            View on Amazon ↗
-          </button>
-          <button class="${p.active ? 'btn-small btn-small-danger' : 'btn-small'}"
-            onclick="toggleProduct(${p.id}, ${p.active})">
-            ${p.active ? 'Pause' : 'Activate'}
-          </button>
+
+        <!-- Score reason + actions -->
+        <div class="product-footer">
+          <div class="product-reason">
+            ${p.score_reason
+              ? '💡 ' + esc(p.score_reason)
+              : 'Product ASIN: ' + esc(p.asin) + ' · ' + esc(p.category)}
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0;">
+            <button class="btn-small" onclick="window.open('https://amazon.co.uk/dp/${esc(p.asin)}','_blank')">
+              View on Amazon ↗
+            </button>
+            <button class="${p.active ? 'btn-small btn-small-danger' : 'btn-small'}"
+              onclick="toggleProduct(${p.id}, ${p.active})">
+              ${p.active ? 'Pause' : 'Activate'}
+            </button>
+          </div>
         </div>
       </div>
     </div>`;
+
   }).join('');
 }
 

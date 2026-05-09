@@ -1,9 +1,14 @@
 name: Score products
 
 on:
-  workflow_dispatch:          # run manually anytime
+  workflow_dispatch:
+    inputs:
+      force_score:
+        description: 'Bypass the 6-day cooldown? (1 for yes, 0 for no)'
+        required: false
+        default: '0'
   schedule:
-    - cron: "0 7 * * 1"      # every Monday 7am UTC (before pin generation)
+    - cron: "0 8 * * 5"      # every Friday 7am UTC (before pin generation)
 
 jobs:
   score:
@@ -23,6 +28,7 @@ jobs:
 
       - name: Score products
         env:
+          FORCE_SCORE:     ${{ github.event.inputs.force_score || '0' }}
           GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL:    ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:    ${{ secrets.SUPABASE_KEY }}

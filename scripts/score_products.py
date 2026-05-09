@@ -136,31 +136,49 @@ def load_products():
 
 # ── 2. Amazon BSR scraper ────────────────────────────────────
 
-def get_amazon_bsr(asin):
+def get_amazon_bsr(asin, session=None):
     """Fetch BSR rank directly from Amazon product page with retries."""
     url = f"https://www.amazon.co.uk/dp/{asin}"
+    if not session:
+        session = requests.Session()
+        session.headers.update(random_headers())
+
     for attempt in range(1, 4):
         try:
+            # Add referer to look more natural
             headers = random_headers()
-            headers["Referer"] = "https://www.amazon.co.uk/"
-            cookies = get_amazon_cookies()
+            headers["Referer"] = f"https://www.amazon.co.uk/s?k={asin}"
             
-            resp = requests.get(url, headers=headers, cookies=cookies, timeout=15)
+            resp = session.get(url, headers=headers, timeout=15)
             
             if resp.status_code == 200:
-                if "api-services-support@amazon.com" in resp.text or "To discuss automated access" in resp.text:
+                if "api-services-support@amazon.com" in resp.text:
                     if attempt < 3:
-                        wait = random.uniform(5, 10)
-                        print(f"  BSR: Attempt {attempt} blocked (CAPTCHA) for {asin}. Retrying in {wait:.1f}s...")
+                        wait = random.uniform(10, 20)
+                        print(f"  BSR: Blocked. Cooling down for {wait:.1f}s...")
                         time.sleep(wait)
+                        # Rotate session on block
+                        session = requests.Session()
+                        session.get("https://www.amazon.co.uk/", timeout=10)
                         continue
                     else:
-                        print(f"  BSR: Final attempt blocked (CAPTCHA) for {asin}")
                         return None
                 
                 soup = BeautifulSoup(resp.text, "html.parser")
                 
-                # Method 1: Search for "Best Sellers Rank" label (handles nested tags)
+                # Method 1: The 'Additional Information' table (common for aesthetic/home items)
+                # Look for a <th> or <td> containing 'Rank'
+                table_cell = soup.find(["th", "td"], string=re.compile(r"Best\s*Sellers?\s*Rank", re.I))
+                if table_cell:
+                    value_cell = table_cell.find_next("td") or table_cell
+                    txt = value_cell.get_text(strip=True)
+                    match = re.search(r"#([\d,]+)", txt)
+                    if match:
+                        rank = int(match.group(1).replace(",", ""))
+                        print(f"  BSR: #{rank:,} (found in info table)")
+                        return rank
+
+                # Method 2: Search for "Best Sellers Rank" label in lists
                 # re.S allows . to match newlines if needed, though not used here
                 bsr_label = soup.find(string=re.compile(r"Best\s*Sellers?\s*Rank", re.I))
                 if bsr_label:
@@ -191,6 +209,24 @@ def get_amazon_bsr(asin):
                     print(f"  BSR: #{rank:,} (found via global regex)")
                     return rank
                 
+                # Method 4: Search the whole text for ANY rank pattern (desperate)
+                text = soup.get_text()
+                patterns = [
+                    r"([0-9,]+)\s+in\s+[A-Za-z\s&]+",
+                    r"Rank\s+#?([0-9,]+)",
+                    r"#[0-9,]+\s+in\s+[A-Za-z\s&]+"
+                ]
+                for pattern in patterns:
+                    match = re.search(pattern, text)
+                    if match:
+                        try:
+                            rank_str = match.group(0).split('in')[0] if 'in' in match.group(0) else match.group(1)
+                            rank_str = re.sub(r"[^0-9]", "", rank_str)
+                            if rank_str:
+                                print(f"  BSR: #{int(rank_str):,} (found via fallback regex)")
+                                return int(rank_str)
+                        except: continue
+
                 # Debug info if not found
                 has_captcha = "api-services-support@amazon.com" in resp.text
                 print(f"  BSR: not found (Length: {len(resp.text)}, Captcha: {has_captcha})")
@@ -212,30 +248,42 @@ def get_amazon_bsr(asin):
 
 # ── 3. Google Trends ─────────────────────────────────────────
 
-def get_trend_score(product_name):
-    """Fetch interest score from Google Trends via pytrends."""
+def get_trend_score(keyword, fallback_niche=None):
+    """Get interest score (0.0-1.0) and direction for a keyword."""
+    search_term = keyword
+    # If the keyword is too long (Amazon titles), it fails on Trends.
+    # We should prioritize shorter, high-intent keywords.
+    if len(search_term.split()) > 6:
+        search_term = " ".join(search_term.split()[:4])
+        
+    print(f"  Trends: Researching: '{search_term}'", end=" ", flush=True)
     import random
-    for attempt in range(1, 3):
+    for attempt in range(1, 4):
         try:
             from pytrends.request import TrendReq
             pt = TrendReq(hl="en-GB", tz=0, timeout=(15, 30))
-            keyword = " ".join(product_name.split()[:3])
             
             # If second attempt, wait longer
             if attempt > 1:
-                time.sleep(random.uniform(10, 20))
+                time.sleep(random.uniform(20, 40))
             else:
-                time.sleep(random.uniform(2, 5))
+                time.sleep(random.uniform(5, 10))
             
-            print(f"  Trends: Researching keyword: '{keyword}' (Attempt {attempt})")
-            pt.build_payload([keyword], timeframe="now 7-d", geo="GB")
+            pt.build_payload([search_term], timeframe="now 7-d", geo="GB")
             data = pt.interest_over_time()
 
-            if data.empty:
-                print(f"  Trends: no data for '{keyword}'")
-                return 50, "stable"
+            if data.empty or data[search_term].sum() == 0:
+                # If no data, try a broader term (first 2 words)
+                broader = " ".join(search_term.split()[:2])
+                if broader != search_term:
+                    print(f" (no data, trying '{broader}'...)", end="", flush=True)
+                    pt.build_payload([broader], timeframe="now 7-d", geo="GB")
+                    data = pt.interest_over_time()
+            
+            if data.empty or data.columns[0] not in data:
+                return 50.0, "stable"
 
-            values = data[keyword].tolist()
+            values = data[data.columns[0]].tolist()
             avg    = sum(values) / len(values)
             mid    = len(values) // 2
             first  = sum(values[:mid]) / max(mid, 1)
@@ -440,7 +488,7 @@ Return ONLY valid JSON array, no markdown:
 
 # ── 6. Save scores to Supabase ───────────────────────────────
 
-def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves, keywords):
+def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_delta, saves, save_delta, keywords):
     resp = requests.patch(
         f"{SUPABASE_URL}/rest/v1/products?id=eq.{product_id}",
         headers=SUPABASE_HEADERS,
@@ -450,7 +498,9 @@ def save_score(product_id, score, reason, bsr, trend_score, trend_dir, saves, ke
             "bsr_rank":                 bsr,
             "trend_score":              trend_score,
             "trend_dir":                trend_dir,
+            "trend_delta":              trend_delta,
             "pinterest_saves":          saves,
+            "save_delta":               save_delta,
             "pinterest_keywords":       keywords,
             "keywords_last_updated_at": datetime.now(timezone.utc).isoformat(),
             "last_scored_at":           datetime.now(timezone.utc).isoformat()
@@ -478,29 +528,64 @@ if __name__ == "__main__":
     products_data = []
     signals       = {}
 
+    # Create a persistent session for all Amazon requests
+    amazon_session = requests.Session()
+    amazon_session.headers.update(random_headers())
+    try:
+        print("Warming up Amazon session...")
+        amazon_session.get("https://www.amazon.co.uk/", timeout=15)
+        time.sleep(2)
+    except: pass
+
     for p in products:
         print(f"\n── {p['name']} ({p['asin']}) ──")
 
-        bsr                    = get_amazon_bsr(p["asin"])
-        trend_score, trend_dir = get_trend_score(p["name"])
+        # ── 1. Smart Cooldown Check ──────────────────────────
+        last_scored = p.get("last_scored_at")
+        force_run = os.environ.get("FORCE_SCORE") == "1"
+        
+        if last_scored and not force_run:
+            try:
+                ls_dt = datetime.fromisoformat(last_scored.replace("Z", "+00:00"))
+                days_since = (datetime.now(timezone.utc) - ls_dt).days
+                if days_since < 6: # Only score once a week
+                    print(f"  Skipping: Already scored {days_since} days ago.")
+                    continue
+            except Exception: pass
+
+        # ── 2. Signal Fetching ───────────────────────────────
+        bsr                    = get_amazon_bsr(p["asin"], session=amazon_session)
+        
+        # IMPROVEMENT: Use the Pinterest keyword for Trends, not the messy Amazon title
+        trend_query = p["name"]
+        if p.get("pinterest_keywords") and len(p["pinterest_keywords"]) > 0:
+            trend_query = p["pinterest_keywords"][0]
+            
+        trend_score, trend_dir = get_trend_score(trend_query)
         saves                  = get_pinterest_saves(p["id"], auth)
-        keywords               = p.get("pinterest_keywords")
-        last_updated           = p.get("keywords_last_updated_at")
+        
+        # Calculate Deltas (Momentum)
+        prev_saves = p.get("pinterest_saves") or 0
+        save_delta = saves - prev_saves if prev_saves > 0 else 0
+        
+        prev_trend = p.get("trend_score") or 0
+        trend_delta = trend_score - prev_trend if prev_trend > 0 else 0
+
+        # ── 3. Keyword Research (if needed) ──────────────────
+        keywords     = p.get("pinterest_keywords")
+        last_updated = p.get("keywords_last_updated_at")
         
         needs_refresh = True
         if keywords and last_updated:
             try:
-                # Check if keywords are older than 30 days
                 lu_dt = datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
                 days_old = (datetime.now(timezone.utc) - lu_dt).days
                 if days_old < 30:
                     needs_refresh = False
-            except Exception:
-                pass
+            except Exception: pass
 
         if needs_refresh:
             keywords = research_keywords(p)
-            # Save keywords to DB for generate_pins to use
             try:
                 supabase_patch(f"products?id=eq.{p['id']}", {
                     "pinterest_keywords":       keywords,
@@ -508,19 +593,25 @@ if __name__ == "__main__":
                 })
             except Exception as e:
                 print(f"  Warning: failed to save keywords: {e}")
-        commission             = p.get("commission") or COMMISSION_RATES.get(
-                                   p.get("category", "").lower(),
-                                   COMMISSION_RATES["default"]
-                                 )
+
+        # ── 4. Final Signal Package ──────────────────────────
+        commission = p.get("commission") or COMMISSION_RATES.get(
+            p.get("category", "").lower(),
+            COMMISSION_RATES["default"]
+        )
 
         signals[p["asin"]] = {
-            "id":          p["id"],
-            "bsr":         bsr,
-            "trend_score": trend_score,
-            "trend_dir":   trend_dir,
-            "saves":       saves,
-            "commission":  commission,
-            "keywords":    keywords
+            "id":           p["id"],
+            "bsr":          bsr,
+            "trend_score":  trend_score,
+            "trend_dir":    trend_dir,
+            "trend_delta":  trend_delta,
+            "saves":        saves,
+            "save_delta":   save_delta,
+            "commission":   commission,
+            "price":        p.get("price", 0),
+            "category":     p.get("category", "unknown"),
+            "keywords":     keywords
         }
 
         products_data.append({
@@ -554,7 +645,9 @@ if __name__ == "__main__":
             bsr         = sig.get("bsr"),
             trend_score = sig.get("trend_score", 0),
             trend_dir   = sig.get("trend_dir", "stable"),
+            trend_delta = sig.get("trend_delta", 0),
             saves       = sig.get("saves", 0),
+            save_delta  = sig.get("save_delta", 0),
             keywords    = sig.get("keywords", [])
         )
         print(f"  {asin} → {s['score']}/100 — {s['reason']}")
