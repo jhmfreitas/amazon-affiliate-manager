@@ -796,7 +796,7 @@ async function loadPins() {
   // Fetch pins, active products (for pin cards), and ALL products count in parallel
   const [pinsRes, productsRes, allProductsCountRes] = await Promise.all([
     db.from('pins').select('*').order('created_at', { ascending: false }),
-    db.from('products').select('id, name, category, score, commission, affiliate_url').eq('active', true),
+    db.from('products').select('id, name, category, score, commission, affiliate_url, price').eq('active', true),
     db.from('products').select('id', { count: 'exact', head: true })
   ]);
 
@@ -1141,9 +1141,15 @@ function render() {
               <span style="font-family:'DM Mono',monospace;font-size:11px;
                 background:var(--green-bg);color:var(--green);
                 border:1px solid var(--green-bd);padding:2px 8px;
-                border-radius:99px;">${prod.score}/100</span>
+                border-radius:99px;">£${(prod.price || 0).toFixed(2)}</span>
+              <span style="font-family:'DM Mono',monospace;font-size:11px;
+                background:var(--bg);color:var(--muted);
+                border:1px solid var(--border);padding:2px 8px;
+                border-radius:99px;">Score: ${prod.score}/100</span>
               <span style="font-family:'DM Mono',monospace;font-size:11px;
                 color:var(--muted);">${prod.commission}% commission</span>
+              <a href="${esc(prod.affiliate_url || '')}" target="_blank" 
+                 style="font-size:11px;color:var(--link);text-decoration:none;">View on Amazon ↗</a>
             </div>`;
           })()}
 
