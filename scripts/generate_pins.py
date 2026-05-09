@@ -36,7 +36,7 @@ DEFAULT_BOARD = "1128785162794453906"
 
 # ── 1. Rotation Candidates ────────────────────────────────────
 
-def get_rotation_candidates(limit=3):
+def get_rotation_candidates(limit=5):
     """Fetch a pool of products and pick the best for rotation."""
     resp = requests.get(
         f"{SUPABASE_URL}/rest/v1/products",
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     has_errors = False
 
     try:
-        targets = get_rotation_candidates(limit=3)
+        targets = get_rotation_candidates(limit=5)
         print(f"Processing {len(targets)} products...")
         
         for product in targets:

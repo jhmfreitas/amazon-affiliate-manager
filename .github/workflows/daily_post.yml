@@ -3,7 +3,9 @@ name: Post daily pin
 on:
   workflow_dispatch:          # manual trigger for testing
   schedule:
-    - cron: "0 19 * * *"     # every day at 7pm UTC (8pm Lisbon)
+    - cron: "0 8 * * *"      # 9 AM Lisbon
+    - cron: "0 13 * * *"     # 2 PM Lisbon
+    - cron: "0 19 * * *"     # 8 PM Lisbon
 
 jobs:
   post:
