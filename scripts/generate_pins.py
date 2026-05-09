@@ -23,12 +23,14 @@ CANDIDATES = 2   # How many AI variations to brainstorm
 KEEP_TOP   = 1   # How many to actually save
 AMAZON_COUNTRY = "co.uk"
 BOARD_MAP = {
-    "kitchen":          "1128785162794244743",  # Aesthetic Kitchen
-    "aesthetic_kitchen":"1128785162794244743",
-    "bedroom":          "1128785162794244744",  # Cozy Bedroom
-    "bathroom":         "1128785162794244745",  # Spa Bathroom
+    "kitchen":          "1128785162794432309",  # Amazon Kitchen Finds
+    "home office":      "1128785162794453530",  # Desk Setup & WFH Tools
     "home":             "1128785162794432647",  # Budget Home Upgrades
     "furniture":        "1128785162794432647",
+    "fitness":          "1128785162794443172",
+    "gaming":           "1128785162794246440",
+    "fashion":          "1128785162795137672",
+    "gifts":            "1128785162794136690"
 }
 DEFAULT_BOARD = "1128785162794453906"
 
