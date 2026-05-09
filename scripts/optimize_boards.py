@@ -22,7 +22,7 @@ def get_boards(auth):
 
 def generate_seo_metadata(board_name):
     """Use Gemini to create a high-SEO title and description."""
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
     
     prompt = f"Optimize this Pinterest board name for high-conversion SEO: '{board_name}'.\n" \
              f"Provide a new 'name' (max 50 chars) and a 'description' (200-400 chars).\n" \
@@ -30,6 +30,9 @@ def generate_seo_metadata(board_name):
              f"Return as JSON: {{'name': '...', 'description': '...'}}"
              
     resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
+    if not resp.ok:
+        print(f"  Gemini API Error ({resp.status_code}): {resp.text}")
+        return None
     data = resp.json()
     
     if "candidates" not in data:
