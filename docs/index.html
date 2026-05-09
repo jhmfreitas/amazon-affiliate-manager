@@ -795,7 +795,7 @@ async function loadPins() {
 
   // Fetch pins, active products (for pin cards), and ALL products count in parallel
   const [pinsRes, productsRes, allProductsCountRes] = await Promise.all([
-    db.from('pins').select('*').order('created_at', { ascending: false }),
+    db.from('pins').select('*, impressions, clicks, saves').order('created_at', { ascending: false }),
     db.from('products').select('id, name, category, score, commission, affiliate_url, price').eq('active', true),
     db.from('products').select('id', { count: 'exact', head: true })
   ]);
@@ -1216,11 +1216,20 @@ function render() {
               <div style="font-size:11px;color:var(--muted);
                 font-family:'DM Mono',monospace;">${esc(pin.board_id)}</div>
             </div>` : ''}
-            ${pin.score_reason ? `
-            <div>
-              <div class="field-label">AI score reason</div>
-              <div style="font-size:11px;color:var(--muted);
-                font-style:italic;">${esc(pin.score_reason)}</div>
+            ${pin.posted ? `
+            <div class="product-signals" style="margin-top:12px; grid-template-columns: repeat(3, 1fr);">
+              <div class="signal">
+                <div class="signal-label">Impressions</div>
+                <div class="signal-val" style="font-size:14px;">${(pin.impressions || 0).toLocaleString()}</div>
+              </div>
+              <div class="signal">
+                <div class="signal-label">Clicks</div>
+                <div class="signal-val" style="font-size:14px; color:var(--blue);">${(pin.clicks || 0).toLocaleString()}</div>
+              </div>
+              <div class="signal">
+                <div class="signal-label">Saves</div>
+                <div class="signal-val" style="font-size:14px; color:var(--green);">${(pin.saves || 0).toLocaleString()}</div>
+              </div>
             </div>` : ''}
             <div>
               <div class="field-label">Affiliate link</div>
@@ -1449,8 +1458,13 @@ function renderProducts() {
             <div class="signal-sub">Δ${tDeltaStr}</div>
           </div>
           <div class="signal">
-            <div class="signal-label">Pinterest saves</div>
-            <div class="signal-val">${(p.pinterest_saves || 0).toLocaleString()}</div>
+            <div class="signal-label">Pinterest Clicks</div>
+            <div class="signal-val" style="color:var(--blue);">${(p.total_clicks || 0).toLocaleString()}</div>
+            <div class="signal-sub">Total all pins</div>
+          </div>
+          <div class="signal">
+            <div class="signal-label">Pinterest Saves</div>
+            <div class="signal-val" style="color:var(--green);">${(p.total_saves || 0).toLocaleString()}</div>
             <div class="signal-sub">Δ${sDeltaStr}</div>
           </div>
           <div class="signal">
