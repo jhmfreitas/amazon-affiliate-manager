@@ -136,100 +136,66 @@ def load_products():
 
 # ── 2. Amazon BSR scraper ────────────────────────────────────
 
-def get_amazon_bsr(asin, session=None):
-    """Fetch BSR rank directly from Amazon product page with retries."""
+def get_amazon_signals(asin, session=None):
+    """Fetch BSR rank, price, and availability from Amazon."""
     url = f"https://www.amazon.co.uk/dp/{asin}"
     if not session:
         session = requests.Session()
         session.headers.update(random_headers())
 
+    signals = {"bsr": None, "price": None, "available": True}
+
     for attempt in range(1, 4):
         try:
-            # Add referer to look more natural
             headers = random_headers()
             headers["Referer"] = f"https://www.amazon.co.uk/s?k={asin}"
-            
             resp = session.get(url, headers=headers, timeout=15)
             
             if resp.status_code == 200:
                 if "api-services-support@amazon.com" in resp.text:
-                    if attempt < 3:
-                        wait = random.uniform(10, 20)
-                        print(f"  BSR: Blocked. Cooling down for {wait:.1f}s...")
-                        time.sleep(wait)
-                        # Rotate session on block
-                        session = requests.Session()
-                        session.get("https://www.amazon.co.uk/", timeout=10)
-                        continue
-                    else:
-                        return None
+                    time.sleep(random.uniform(5, 10))
+                    continue
                 
                 soup = BeautifulSoup(resp.text, "html.parser")
                 
-                # Method 1: The 'Additional Information' table (common for aesthetic/home items)
-                # Look for a <th> or <td> containing 'Rank'
+                # 1. Availability
+                out_of_stock = soup.find(id="outOfStock") or soup.find(id="availability")
+                if out_of_stock and "currently unavailable" in out_of_stock.get_text().lower():
+                    signals["available"] = False
+                
+                # 2. Price
+                price_span = soup.select_one(".a-price .a-offscreen") or soup.select_one(".a-price-whole")
+                if price_span:
+                    try:
+                        price_text = re.sub(r"[^\d.]", "", price_span.get_text())
+                        if price_text: signals["price"] = float(price_text)
+                    except: pass
+
+                # 3. BSR (Using our resilient methods)
+                # Method 1: The 'Additional Information' table
                 table_cell = soup.find(["th", "td"], string=re.compile(r"Best\s*Sellers?\s*Rank", re.I))
                 if table_cell:
                     value_cell = table_cell.find_next("td") or table_cell
-                    txt = value_cell.get_text(strip=True)
-                    match = re.search(r"#([\d,]+)", txt)
+                    match = re.search(r"#([\d,]+)", value_cell.get_text(strip=True))
                     if match:
-                        rank = int(match.group(1).replace(",", ""))
-                        print(f"  BSR: #{rank:,} (found in info table)")
-                        return rank
+                        signals["bsr"] = int(match.group(1).replace(",", ""))
+                        return signals
 
-                # Method 2: Search for "Best Sellers Rank" label in lists
-                # re.S allows . to match newlines if needed, though not used here
-                bsr_label = soup.find(string=re.compile(r"Best\s*Sellers?\s*Rank", re.I))
-                if bsr_label:
-                    container = bsr_label.find_parent(["span", "li", "td", "div"])
-                    if container:
-                        bsr_text = container.get_text(strip=True)
-                        match = re.search(r"#([\d,]+)\s+in\s+", bsr_text)
-                        if match:
-                            rank = int(match.group(1).replace(",", ""))
-                            print(f"  BSR: #{rank:,}")
-                            return rank
-
-                # Method 2: Ultra-loose search for ANY element containing "#123 in Category"
-                # This catches cases where the label is missing or obscured
-                potential_tags = soup.find_all(["span", "li", "td", "b"], string=re.compile(r"#[\d,]+\s+in\s+", re.I))
-                for tag in potential_tags:
-                    txt = tag.get_text(strip=True)
-                    match = re.search(r"#([\d,]+)\s+in\s+([\w\s&]+)", txt)
-                    if match:
-                        rank = int(match.group(1).replace(",", ""))
-                        print(f"  BSR: #{rank:,} (found via loose match)")
-                        return rank
-
-                # Method 3: Global fallback regex (most desperate)
-                match = re.search(r"Best\s*Sellers?\s*Rank:?\s*#([\d,]+)\s+in\s+([\w\s&]+)", resp.text, re.I)
+                match = re.search(r"Best\s*Sellers?\s*Rank:?\s*#([\d,]+)", resp.text, re.I)
                 if match:
-                    rank = int(match.group(1).replace(",", ""))
-                    print(f"  BSR: #{rank:,} (found via global regex)")
-                    return rank
+                    signals["bsr"] = int(match.group(1).replace(",", ""))
+                    return signals
                 
-                # Method 4: Search the whole text for ANY rank pattern (desperate)
-                text = soup.get_text()
-                patterns = [
-                    r"([0-9,]+)\s+in\s+[A-Za-z\s&]+",
-                    r"Rank\s+#?([0-9,]+)",
-                    r"#[0-9,]+\s+in\s+[A-Za-z\s&]+"
-                ]
-                for pattern in patterns:
-                    match = re.search(pattern, text)
-                    if match:
-                        try:
-                            rank_str = match.group(0).split('in')[0] if 'in' in match.group(0) else match.group(1)
-                            rank_str = re.sub(r"[^0-9]", "", rank_str)
-                            if rank_str:
-                                print(f"  BSR: #{int(rank_str):,} (found via fallback regex)")
-                                return int(rank_str)
-                        except: continue
+                return signals
+            
+            elif resp.status_code == 404:
+                signals["available"] = False
+                return signals
 
-                # Debug info if not found
-                has_captcha = "api-services-support@amazon.com" in resp.text
-                print(f"  BSR: not found (Length: {len(resp.text)}, Captcha: {has_captcha})")
+        except Exception as e:
+            time.sleep(2)
+            
+    return signals
                 return None
             
             elif resp.status_code == 404:
@@ -488,23 +454,27 @@ Return ONLY valid JSON array, no markdown:
 
 # ── 6. Save scores to Supabase ───────────────────────────────
 
-def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_delta, saves, save_delta, keywords):
+def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_delta, saves, save_delta, keywords, active=None):
+    payload = {
+        "score":                    score,
+        "score_reason":             reason,
+        "bsr_rank":                 bsr,
+        "trend_score":              trend_score,
+        "trend_dir":                trend_dir,
+        "trend_delta":              trend_delta,
+        "pinterest_saves":          saves,
+        "save_delta":               save_delta,
+        "pinterest_keywords":       keywords,
+        "keywords_last_updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_scored_at":           datetime.now(timezone.utc).isoformat()
+    }
+    if active is not None:
+        payload["active"] = active
+
     resp = requests.patch(
         f"{SUPABASE_URL}/rest/v1/products?id=eq.{product_id}",
         headers=SUPABASE_HEADERS,
-        json={
-            "score":                    score,
-            "score_reason":             reason,
-            "bsr_rank":                 bsr,
-            "trend_score":              trend_score,
-            "trend_dir":                trend_dir,
-            "trend_delta":              trend_delta,
-            "pinterest_saves":          saves,
-            "save_delta":               save_delta,
-            "pinterest_keywords":       keywords,
-            "keywords_last_updated_at": datetime.now(timezone.utc).isoformat(),
-            "last_scored_at":           datetime.now(timezone.utc).isoformat()
-        }
+        json=payload
     )
     resp.raise_for_status()
 
@@ -554,9 +524,21 @@ if __name__ == "__main__":
             except Exception: pass
 
         # ── 2. Signal Fetching ───────────────────────────────
-        bsr                    = get_amazon_bsr(p["asin"], session=amazon_session)
+        amazon_sig = get_amazon_signals(p["asin"], session=amazon_session)
+        bsr        = amazon_sig["bsr"]
+        price      = amazon_sig["price"] or p.get("price", 0)
+        available  = amazon_sig["available"]
         
-        # IMPROVEMENT: Use the Pinterest keyword for Trends, not the messy Amazon title
+        # Auto-Pause Logic
+        active_status = True
+        if not available:
+            print("  ⚠️ AUTO-PAUSED: Currently Unavailable")
+            active_status = False
+        elif price > 0 and price < 10.0:
+            print(f"  ⚠️ AUTO-PAUSED: Price too low (£{price})")
+            active_status = False
+
+        # IMPROVEMENT: Use the Pinterest keyword for Trends
         trend_query = p["name"]
         if p.get("pinterest_keywords") and len(p["pinterest_keywords"]) > 0:
             trend_query = p["pinterest_keywords"][0]
@@ -601,17 +583,18 @@ if __name__ == "__main__":
         )
 
         signals[p["asin"]] = {
-            "id":           p["id"],
-            "bsr":          bsr,
-            "trend_score":  trend_score,
-            "trend_dir":    trend_dir,
-            "trend_delta":  trend_delta,
-            "saves":        saves,
-            "save_delta":   save_delta,
-            "commission":   commission,
-            "price":        p.get("price", 0),
-            "category":     p.get("category", "unknown"),
-            "keywords":     keywords
+            "id":            p["id"],
+            "bsr":           bsr,
+            "trend_score":   trend_score,
+            "trend_dir":     trend_dir,
+            "trend_delta":   trend_delta,
+            "saves":         saves,
+            "save_delta":    save_delta,
+            "commission":    commission,
+            "price":         p.get("price", 0),
+            "category":      p.get("category", "unknown"),
+            "keywords":      keywords,
+            "active_status": active_status
         }
 
         products_data.append({
@@ -648,7 +631,8 @@ if __name__ == "__main__":
             trend_delta = sig.get("trend_delta", 0),
             saves       = sig.get("saves", 0),
             save_delta  = sig.get("save_delta", 0),
-            keywords    = sig.get("keywords", [])
+            keywords    = sig.get("keywords", []),
+            active      = sig.get("active_status")
         )
         print(f"  {asin} → {s['score']}/100 — {s['reason']}")
 
