@@ -3,7 +3,7 @@ name: Post daily pin
 on:
   workflow_dispatch:          # manual trigger for testing
   schedule:
-    - cron: "0 10 * * *"     # every day at 10am UTC
+    - cron: "0 20 * * *"     # every day at 8pm UTC
 
 jobs:
   post:

@@ -196,10 +196,6 @@ def save_pin(pin, product, affiliate_url, board_id):
     }
     return supabase_post("pins", row)
 
-import sys
-
-# ... (keep imports same)
-
 # ── Main ─────────────────────────────────────────────────────
 
 if __name__ == "__main__":
