@@ -144,7 +144,8 @@ def generate_candidates(product, count, keywords):
     2. Description: 200-400 characters total. Use natural keywords.
     3. NO HASHTAGS (e.g., #HomeDecor). Use flowing sentences instead.
     
-    Format: JSON list of objects with 'title', 'description', 'alt_text', 'pexels_search'.
+    Format: JSON list of objects with 'title', 'description', 'alt_text', 'keywords', 'pexels_search'.
+    'keywords' should be a list of 5-8 short search phrases (no hashtags).
     """
     resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
     data = resp.json()
@@ -184,6 +185,8 @@ def save_pin(pin, product, affiliate_url, board_id):
     row = {
         "title":         pin["title"],
         "description":   pin["description"],
+        "alt_text":      pin.get("alt_text", ""),
+        "keywords":      pin.get("keywords", []),
         "image_url":     pin["image_url"],
         "link_url":      affiliate_url,
         "product_id":    product["id"],

@@ -1098,7 +1098,7 @@ function render() {
     const status    = getStatus(pin);
     const isEditing = editingId === pin.id;
     const canEdit   = !pin.posted;
-    const kwTags   = (pin.hashtags || [])
+    const kwTags   = (pin.keywords || [])
       .map(t => `<span class="tag">${esc(t)}</span>`).join('');
 
     return `
@@ -1166,9 +1166,9 @@ function render() {
             </div>
             <div>
               <div class="field-label">Keywords (SEO reference) — comma separated</div>
-              <input id="h-${pin.id}" class="edit-input"
-                value="${esc((pin.hashtags || []).join(', '))}"
-                placeholder="e.g. standing desk ideas, home office setup, remote work" />
+              <textarea id="h-${pin.id}" class="edit-textarea" 
+                style="min-height:55px;"
+                placeholder="e.g. standing desk ideas, home office setup, remote work">${esc((pin.keywords || []).join(', '))}</textarea>
             </div>
             <div>
               <div class="field-label">Image search query</div>
@@ -1195,12 +1195,11 @@ function render() {
               <div class="field-label">Description <span style="font-weight:400;color:${(pin.description||'').length > 500 ? 'var(--red)' : 'var(--faint)'}">(${(pin.description||'').length}/500 chars)</span></div>
               <div class="field-desc">${esc(pin.description)}</div>
             </div>
-            ${pin.alt_text ? `
             <div>
-              <div class="field-label">Alt text</div>
-              <div style="font-size:11px;color:var(--muted);
-                font-style:italic;">${esc(pin.alt_text)}</div>
-            </div>` : ''}
+              <div class="field-label">Alt text (accessibility)</div>
+              <div style="font-size:11px;color:${pin.alt_text ? 'var(--muted)' : 'var(--faint)'};
+                font-style:italic;">${pin.alt_text ? esc(pin.alt_text) : 'No alt text set'}</div>
+            </div>
             <div>
               <div class="field-label">Keywords (SEO reference)</div>
               <div class="tags-wrap">${kwTags || '<span style="font-size:11px;color:var(--faint)">No keywords set</span>'}</div>
