@@ -135,9 +135,14 @@ def upload_image(image_bytes):
 def generate_candidates(product, count, keywords):
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     prompt = f"""
-    Create {count} Pinterest Pin titles and descriptions for: {product['name']}
+    Create {count} Pinterest Pin ideas for: {product['name']}
     Category: {product.get('category', 'Home')}
     Keywords: {keywords}
+    
+    STRICT RULES:
+    1. Title: Under 90 characters.
+    2. Description: 200-400 characters total. Use natural keywords.
+    3. NO HASHTAGS (e.g., #HomeDecor). Use flowing sentences instead.
     
     Format: JSON list of objects with 'title', 'description', 'alt_text', 'pexels_search'.
     """
@@ -149,7 +154,22 @@ def generate_candidates(product, count, keywords):
         raise ValueError(f"Gemini failed: {data.get('error', {}).get('message', 'Unknown error')}")
         
     txt = data['candidates'][0]['content']['parts'][0]['text']
-    return json.loads(re.search(r"\[.*\]", txt, re.S).group(0))
+    candidates = json.loads(re.search(r"\[.*\]", txt, re.S).group(0))
+
+    # Smart Sentence-Aware Truncation
+    for c in candidates:
+        if len(c['description']) > 500:
+            text = c['description'][:500]
+            # Look for the last sentence-ender (. ! or ?)
+            last_punc = max(text.rfind('.'), text.rfind('!'), text.rfind('?'))
+            if last_punc > 100: # Ensure we didn't cut off too much
+                c['description'] = text[:last_punc + 1]
+            else:
+                # Fallback to last space if no punctuation found
+                last_space = text.rfind(' ')
+                c['description'] = text[:last_space] + "..."
+            
+    return candidates
 
 def score_candidates(candidates, product):
     # Simple pass-through for now, can be sophisticated later

@@ -1,9 +1,9 @@
-name: Generate weekly pins
+name: Generate daily pins
 
 on:
   workflow_dispatch:          # run manually anytime from GitHub UI
   schedule:
-    - cron: "0 8 * * 1"      # every Monday 8am UTC
+    - cron: "0 8 * * *"      # every day at 8am UTC
 
 jobs:
   generate:
