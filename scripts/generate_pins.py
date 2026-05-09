@@ -83,10 +83,10 @@ def get_pexels_image(query):
     except: pass
     return None, None
 
-def create_moodboard(bg_url, product):
+def create_moodboard(bg_url, product_url, title):
     # Download images
     bg_resp = requests.get(bg_url)
-    pr_resp = requests.get(product.get("image_url") or "https://via.placeholder.com/800")
+    pr_resp = requests.get(product_url)
     
     bg = Image.open(BytesIO(bg_resp.content)).convert("RGBA")
     pr = Image.open(BytesIO(pr_resp.content)).convert("RGBA")
@@ -95,44 +95,19 @@ def create_moodboard(bg_url, product):
     bg = bg.resize((1000, 1500), Image.Resampling.LANCZOS)
     
     # Resize product image
-    pr.thumbnail((620, 620), Image.Resampling.LANCZOS)
+    pr.thumbnail((600, 600), Image.Resampling.LANCZOS)
     
     # Create white circle for product
     mask = Image.new("L", pr.size, 0)
-    draw_mask = ImageDraw.Draw(mask)
-    draw_mask.ellipse((0, 0, pr.size[0], pr.size[1]), fill=255)
+    draw = ImageDraw.Draw(mask)
+    draw.ellipse((0, 0, pr.size[0], pr.size[1]), fill=255)
     
     canvas = Image.new("RGBA", bg.size, (0,0,0,0))
     canvas.paste(bg, (0,0))
     
     # Center product
-    pos = ((1000 - pr.size[0]) // 2, (1500 - pr.size[1]) // 2 - 100)
+    pos = ((1000 - pr.size[0]) // 2, (1500 - pr.size[1]) // 2)
     canvas.paste(pr, pos, mask)
-    
-    # Draw Info Overlay
-    draw = ImageDraw.Draw(canvas)
-    
-    # 1. Price Badge (Top Right)
-    price = f"£{product.get('price', 0):.2f}"
-    if product.get('price', 0) > 0:
-        # Draw a rounded rectangle for price
-        draw.rounded_rectangle([750, 50, 950, 130], radius=40, fill=(255, 255, 255, 230))
-        try:
-            font_price = ImageFont.truetype("arial.ttf", 45)
-        except:
-            font_price = ImageFont.load_default()
-        draw.text((850, 90), price, fill=(0, 0, 0), anchor="mm", font=font_price)
-
-    # 2. Bottom Title Bar
-    # Semi-transparent bar
-    draw.rectangle([0, 1300, 1000, 1500], fill=(0, 0, 0, 140))
-    try:
-        font_title = ImageFont.truetype("arial.ttf", 40)
-    except:
-        font_title = ImageFont.load_default()
-        
-    title_text = product['name'][:75] + ("..." if len(product['name']) > 75 else "")
-    draw.text((500, 1400), title_text, fill=(255, 255, 255), anchor="mm", font=font_title)
     
     # Save
     out = BytesIO()
@@ -253,7 +228,7 @@ if __name__ == "__main__":
                         has_errors = True
                         continue
                     
-                    img_bytes = create_moodboard(pexels_url, product)
+                    img_bytes = create_moodboard(pexels_url, product.get('image_url', 'https://via.placeholder.com/800'), pin['title'])
                     pin['image_url'] = upload_image(img_bytes)
                     
                     saved = save_pin(pin, product, affiliate_url, board_id)
