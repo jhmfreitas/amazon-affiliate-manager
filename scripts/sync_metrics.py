@@ -34,13 +34,17 @@ def get_posted_pins():
 def fetch_pin_metrics(auth, pinterest_id):
     """Call Pinterest API to get analytics for a specific pin."""
     # Metric types: IMPRESSION, PIN_CLICK, SAVE
-    url = f"{PINTEREST_API}/pins/{pinterest_id}/analytics"
+    # Pinterest API v5 only allows ranges up to 90 days
+    from datetime import timedelta
+    start_dt = (datetime.now(timezone.utc) - timedelta(days=89)).strftime("%Y-%m-%d")
+    
     params = {
-        "start_date":   "2024-01-01", # High enough to catch everything
+        "start_date":   start_dt,
         "end_date":     datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "metric_types": "IMPRESSION,PIN_CLICK,SAVE"
     }
     
+    url = f"{PINTEREST_API}/pins/{pinterest_id}/analytics"
     resp = auth.get(url, params=params)
     if resp.status_code == 404:
         return None # Pin might have been deleted or is too new
