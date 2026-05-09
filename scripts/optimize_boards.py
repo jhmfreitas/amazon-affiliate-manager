@@ -37,17 +37,29 @@ def generate_seo_metadata(board_name):
         return None
         
     txt = data['candidates'][0]['content']['parts'][0]['text']
-    return json.loads(re.search(r"\{.*\}", txt, re.S).group(0))
+    try:
+        # Better JSON extraction (handles markdown blocks)
+        match = re.search(r"(\{.*\})", txt, re.S)
+        if not match: 
+            print(f"  Debug: AI didn't return valid JSON. Raw: {txt[:100]}...")
+            return None
+        seo = json.loads(match.group(1))
+        
+        # Pinterest hard limit: 50 chars for Name
+        if len(seo.get('name', '')) > 50:
+            seo['name'] = seo['name'][:47].strip() + "..."
+            
+        return seo
+    except Exception as e:
+        print(f"  Error parsing AI output: {e}")
+        print(f"  Debug: Raw AI text was: {txt}")
+        return None
 
 def update_board(auth, board_id, metadata):
     """Update board name and description via Pinterest API."""
     url = f"{PINTEREST_API}/boards/{board_id}"
-    resp = auth.post(url, json=metadata) # API uses PATCH but my auth helper handles it
     
-    # Note: Pinterest API v5 actually uses PATCH for updates.
-    # My pinterest_auth.py has post/get, I should check if it needs a patch method.
-    # Actually, I'll just use requests.patch with auth.headers() directly.
-    
+    # Pinterest API v5 uses PATCH for updates
     resp = requests.patch(url, headers=auth.headers(), json=metadata)
     if not resp.ok:
         print(f"  Failed to update {board_id}: {resp.text}")
@@ -56,24 +68,31 @@ def update_board(auth, board_id, metadata):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Pinterest Board SEO Optimizer")
+    print("Pinterest Board SEO Optimizer (Debug Edition)")
     print("=" * 60)
 
     auth = PinterestAuth()
     boards = get_boards(auth)
     print(f"Found {len(boards)} boards to optimize.")
 
+    # List of keywords that mean a board is already "Premium"
+    SEO_MARKERS = ["|", ":", "&", "Aesthetic", "Ideas", "Inspiration"]
+
     for b in boards:
-        # Skip system boards if any
-        if b['name'].lower() in ['pins', 'all pins']: continue
+        # Skip system boards
+        if b['name'].lower() in ['pins', 'all pins', 'guardar rápido']: continue
         
+        # Skip if already looks optimized (contains SEO markers)
+        is_optimized = any(m in b['name'] for m in SEO_MARKERS)
+        if is_optimized and len(b['name']) > 20: # Long names with markers are done
+            print(f"Skipping already optimized board: '{b['name']}'")
+            continue
+            
         print(f"\nOptimizing board: '{b['name']}'...")
         seo = generate_seo_metadata(b['name'])
         
         if seo:
             print(f"  New Name: {seo['name']}")
-            print(f"  New Desc: {seo['description'][:70]}...")
-            
             if update_board(auth, b['id'], seo):
                 print("  ✓ Board updated successfully.")
             else:
