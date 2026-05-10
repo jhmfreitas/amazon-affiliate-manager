@@ -1,6 +1,17 @@
 name: Sync Pinterest Metrics
 on:
   workflow_dispatch:          # manual trigger
+    inputs:
+      debug_pinterest_metrics:
+        description: "Print raw Pinterest metrics API responses"
+        required: false
+        default: false
+        type: boolean
+      debug_pinterest_metrics_full:
+        description: "Print full raw Pinterest analytics responses"
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "0 23 * * *"     # daily at 11pm UTC
 
@@ -27,4 +38,6 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
           PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
+          DEBUG_PINTEREST_METRICS: ${{ inputs.debug_pinterest_metrics && '1' || '0' }}
+          DEBUG_PINTEREST_METRICS_FULL: ${{ inputs.debug_pinterest_metrics_full && '1' || '0' }}
         run: python scripts/sync_metrics.py
