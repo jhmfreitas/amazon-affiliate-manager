@@ -225,11 +225,11 @@ def get_trend_score(keyword, fallback_niche=None):
             pt.build_payload([search_term], timeframe="now 7-d", geo="GB")
             data = pt.interest_over_time()
 
-            if data.empty or data[search_term].sum() == 0:
-                # If no data, try a broader term (first 2 words)
+            if data.empty or data[search_term].sum() < 5.0:
+                # If no data or very low interest, try a broader term (first 2 words)
                 broader = " ".join(search_term.split()[:2])
                 if broader != search_term:
-                    print(f" (no data, trying '{broader}'...)", end="", flush=True)
+                    print(f" (low/no data, trying '{broader}'...)", end="", flush=True)
                     pt.build_payload([broader], timeframe="now 7-d", geo="GB")
                     data = pt.interest_over_time()
             
@@ -277,7 +277,7 @@ def get_pinterest_saves(product_id, auth: PinterestAuth):
             params={
                 "product_id": f"eq.{product_id}",
                 "posted":     "eq.true",
-                "select":     "pinterest_id"
+                "select":     "id,pinterest_id"
             }
         )
         resp.raise_for_status()
@@ -302,6 +302,13 @@ def get_pinterest_saves(product_id, auth: PinterestAuth):
                     metrics     = r.json().get("pin_metrics", {})
                     saves       = metrics.get("lifetime_metrics", {}).get("save", 0)
                     total_saves += saves
+                elif r.status_code == 404:
+                    print(f"  Pin {pid} not found (404). Marking as unposted in DB.")
+                    try:
+                        # Mark as posted=false so we don't keep checking it
+                        supabase_patch(f"pins?id=eq.{pin['id']}", {"posted": False})
+                    except Exception as e:
+                        print(f"  Failed to update pin {pin['id']}: {e}")
                 else:
                     print(f"  Could not fetch metrics for pin {pid}: {r.status_code}")
                 time.sleep(0.3)
