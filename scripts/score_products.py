@@ -196,20 +196,7 @@ def get_amazon_signals(asin, session=None):
             time.sleep(2)
             
     return signals
-                return None
-            
-            elif resp.status_code == 404:
-                print(f"  BSR: 404 Not Found for {asin}")
-                return None
-            else:
-                print(f"  BSR: Attempt {attempt} failed for {asin}: Status {resp.status_code}")
-                time.sleep(2)
 
-        except Exception as e:
-            print(f"  BSR: Attempt {attempt} error for {asin}: {e}")
-            time.sleep(2)
-            
-    return None
 
 
 # ── 3. Google Trends ─────────────────────────────────────────
