@@ -8,7 +8,7 @@ on:
         required: false
         default: '0'
   schedule:
-    - cron: "0 8 * * 5"      # every Friday 7am UTC (before pin generation)
+    - cron: "0 7 * * 1"      # every Monday 7am UTC (after weekend Pinterest data)
 
 jobs:
   score:

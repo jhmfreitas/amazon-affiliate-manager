@@ -4,13 +4,15 @@ score_products.py
 Runs weekly (Monday 7am UTC) via GitHub Actions.
 
 For each active product:
-  1. Fetches Amazon BSR via scraping (no API needed)
+  1. Fetches Amazon BSR, price, availability via scraping
   2. Fetches Google Trends interest score via pytrends
-  3. Reads Pinterest save counts from your own pin analytics
-  4. Asks Gemini to score each product 1-100
-  5. Saves scores back to Supabase
+  3. Reads Pinterest metrics (impressions, clicks, saves)
+  4. Scores each product 0-100 using a deterministic formula
+  5. Auto-pauses underperforming products
+  6. Saves scores back to Supabase
 
-Top-scored product is then picked by generate_pins.py.
+Scoring weights: Pinterest Performance 40%, Revenue Potential 25%,
+Market Demand 20%, Momentum 15%. No LLM dependency.
 """
 
 import os, json, time, re, requests, random
@@ -22,15 +24,15 @@ from config import (
     supabase_get, supabase_patch, SUPABASE_HEADERS, SUPABASE_URL
 )
 
-# ── Secrets ──────────────────────────────────────────────────
-GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
+# ── Secrets ────────────────────────────────────────────────────────────
+GEMINI_KEY   = os.environ.get("GEMINI_API_KEY", "")  # Only used for keyword research
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta"
     f"/models/gemini-2.5-flash-lite:generateContent?key={GEMINI_KEY}"
-)
+) if GEMINI_KEY else None
 
 SUPABASE_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -268,6 +270,7 @@ def get_trend_score(keyword, fallback_niche=None):
 def get_pinterest_saves(product_id, auth: PinterestAuth):
     """
     Sum saves across all posted pins for this product.
+    Returns (total_saves, valid_pin_count) tuple.
     Uses shared PinterestAuth — auto-refreshes token on 401.
     """
     try:
@@ -285,9 +288,10 @@ def get_pinterest_saves(product_id, auth: PinterestAuth):
 
         if not pins:
             print(f"  Pinterest saves: no posted pins yet")
-            return 0
+            return 0, 0
 
         total_saves = 0
+        valid_pins  = 0
         for pin in pins:
             pid = pin.get("pinterest_id")
             if not pid:
@@ -302,6 +306,7 @@ def get_pinterest_saves(product_id, auth: PinterestAuth):
                     metrics     = r.json().get("pin_metrics", {})
                     saves       = metrics.get("lifetime_metrics", {}).get("save", 0)
                     total_saves += saves
+                    valid_pins  += 1
                 elif r.status_code == 404:
                     print(f"  Pin {pid} not found (404). Marking as unposted in DB.")
                     try:
@@ -315,12 +320,12 @@ def get_pinterest_saves(product_id, auth: PinterestAuth):
             except Exception as e:
                 print(f"  Error fetching pin {pid}: {e}")
 
-        print(f"  Pinterest saves: {total_saves} across {len(pins)} pins")
-        return total_saves
+        print(f"  Pinterest saves: {total_saves} across {valid_pins} live pins ({len(pins)} total)")
+        return total_saves, valid_pins
 
     except Exception as e:
         print(f"  Pinterest saves error: {e}")
-        return 0
+        return 0, 0
 
 
 # ── 4.5. Keyword research ─ Google autocomplete + Gemini ─────
@@ -402,53 +407,124 @@ Return ONLY a JSON array of strings, no markdown.
     return unique[:20]
 
 
-# ── 5. Gemini scoring engine ─────────────────────────────────
+# ── 5. Deterministic scoring engine ──────────────────────────
 
-def score_products_with_gemini(products_data):
-    prompt = f"""You are an Amazon affiliate marketing analyst.
-Score each product 0-100 for Pinterest promotion potential THIS WEEK.
+def calculate_score(product, sig):
+    """
+    Deterministic, auditable score 0-100. No LLM needed.
+    
+    Weights:
+      Pinterest Performance  40%  (CTR, engagement, volume)
+      Revenue Potential      25%  (price × commission)
+      Market Demand          20%  (BSR + Google Trends)
+      Momentum               15%  (trend direction + save delta)
+    """
+    score = 0
+    breakdown = []
 
-Scoring weights:
-- Pinterest Search Intent 35% (how strong/relevant are the discovered keywords?)
-- Amazon BSR rank         20% (lower = more popular = higher score)
-- Google Trends score     15% (higher interest = higher score)
-- Trend direction         10% (rising=+10, stable=+0, falling=-10)
-- Pinterest saves         10% (more saves = better conversion proof)
-- Commission rate         10% (higher % = higher score)
+    # ── 1. Pinterest Performance (40%) ── THE MONEY SIGNAL ──
+    impressions = product.get("total_impressions", 0) or 0
+    clicks      = product.get("total_clicks", 0) or 0
+    saves       = sig.get("saves", 0)
 
-BSR scoring guide:
-- Under 1,000    → 20 points
-- 1,000-10,000   → 15 points
-- 10,000-50,000  → 10 points
-- 50,000-100,000 → 5 points
-- Over 100,000   → 2 points
-- Unknown        → 8 points (assume average)
+    if impressions > 0:
+        ctr = clicks / impressions
+        engagement = (clicks + saves) / impressions
 
-Products to score (including their discovered Pinterest keywords):
-{json.dumps(products_data, indent=2)}
+        # CTR scoring (20 pts)
+        if   ctr >= 0.05: ctr_pts = 20
+        elif ctr >= 0.02: ctr_pts = 15
+        elif ctr >= 0.01: ctr_pts = 10
+        elif ctr > 0:     ctr_pts = 5
+        else:             ctr_pts = 0
+        score += ctr_pts
+        breakdown.append(f"CTR {ctr:.1%}={ctr_pts}pts")
 
-Return ONLY valid JSON array, no markdown:
-[
-  {{
-    "asin":   "...",
-    "score":  87.5,
-    "reason": "one sentence explaining the score based heavily on keyword intent"
-  }}
-]"""
+        # Engagement scoring (10 pts)
+        if   engagement >= 0.08: eng_pts = 10
+        elif engagement >= 0.03: eng_pts = 7
+        elif engagement >= 0.01: eng_pts = 4
+        else:                    eng_pts = 1
+        score += eng_pts
 
-    resp = requests.post(
-        GEMINI_URL,
-        json={"contents": [{"parts": [{"text": prompt}]}]}
-    )
-    resp.raise_for_status()
-    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-    text = text.replace("```json", "").replace("```", "").strip()
-    return json.loads(text)
+        # Volume bonus (10 pts) — more data = more confidence
+        if   impressions >= 1000: vol_pts = 10
+        elif impressions >= 500:  vol_pts = 7
+        elif impressions >= 100:  vol_pts = 4
+        else:                     vol_pts = 2
+        score += vol_pts
+        breakdown.append(f"{impressions} imp, {clicks} clicks")
+    else:
+        # New product — give it a fair chance to prove itself
+        score += 15
+        breakdown.append("new product bonus")
+
+    # ── 2. Revenue Potential (25%) ───────────────────────────
+    price      = product.get("price", 0) or 0
+    commission = sig.get("commission", 3.0)
+    payout     = price * (commission / 100)
+
+    if   payout >= 5.0: rev_pts = 25
+    elif payout >= 2.0: rev_pts = 18
+    elif payout >= 1.0: rev_pts = 12
+    elif payout >= 0.5: rev_pts = 6
+    else:               rev_pts = 2
+    score += rev_pts
+    breakdown.append(f"£{payout:.2f} payout={rev_pts}pts")
+
+    # ── 3. Market Demand (20%) ───────────────────────────────
+    bsr = sig.get("bsr")
+    if   bsr and bsr < 1000:    bsr_pts = 10
+    elif bsr and bsr < 10000:   bsr_pts = 8
+    elif bsr and bsr < 50000:   bsr_pts = 5
+    elif bsr and bsr < 100000:  bsr_pts = 3
+    else:                       bsr_pts = 4  # Unknown = average
+    score += bsr_pts
+
+    trend = sig.get("trend_score", 50) or 50
+    if   trend >= 70: trend_pts = 10
+    elif trend >= 40: trend_pts = 7
+    elif trend >= 20: trend_pts = 4
+    else:             trend_pts = 1
+    score += trend_pts
+    breakdown.append(f"BSR={bsr or '?'}, trend={trend}")
+
+    # ── 4. Momentum (15%) ────────────────────────────────────
+    trend_dir  = sig.get("trend_dir", "stable")
+    save_delta = sig.get("save_delta", 0)
+
+    if   trend_dir == "rising":  dir_pts = 8
+    elif trend_dir == "stable":  dir_pts = 4
+    else:                        dir_pts = 0
+    score += dir_pts
+
+    if   save_delta > 5:  mom_pts = 7
+    elif save_delta > 0:  mom_pts = 5
+    elif save_delta == 0: mom_pts = 2
+    else:                 mom_pts = 0
+    score += mom_pts
+
+    final = min(score, 100)
+    reason = " | ".join(breakdown)
+    return final, reason
+
+
+def score_all_products(products_data, signals):
+    """Score all products deterministically. Returns list of {asin, score, reason}."""
+    results = []
+    for pd in products_data:
+        asin = pd["asin"]
+        sig  = signals.get(asin, {})
+        # Merge product-level metrics into sig for the formula
+        product_with_metrics = {**pd, **sig}
+        score, reason = calculate_score(product_with_metrics, sig)
+        results.append({"asin": asin, "score": score, "reason": reason})
+    return results
 
 
 # ── 6. Save scores to Supabase ───────────────────────────────
 
-def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_delta, saves, save_delta, keywords, active=None):
+def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_delta, saves, save_delta, keywords, active=None, pause_reason=None):
     payload = {
         "score":                    score,
         "score_reason":             reason,
@@ -464,6 +540,10 @@ def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_del
     }
     if active is not None:
         payload["active"] = active
+    if pause_reason:
+        payload["pause_reason"] = pause_reason
+    elif active:  # If re-activated, clear the pause reason
+        payload["pause_reason"] = None
 
     resp = requests.patch(
         f"{SUPABASE_URL}/rest/v1/products?id=eq.{product_id}",
@@ -523,14 +603,17 @@ if __name__ == "__main__":
         price      = amazon_sig["price"] or p.get("price", 0)
         available  = amazon_sig["available"]
         
-        # Auto-Pause Logic
+        # ── Amazon Auto-Pause Logic ──────────────────────────
         active_status = True
+        pause_reason  = None
         if not available:
             print("  ⚠️ AUTO-PAUSED: Currently Unavailable")
             active_status = False
+            pause_reason  = "Product unavailable on Amazon"
         elif price > 0 and price < 10.0:
             print(f"  ⚠️ AUTO-PAUSED: Price too low (£{price})")
             active_status = False
+            pause_reason  = f"Price too low (£{price})"
 
         # IMPROVEMENT: Use the Pinterest keyword for Trends
         trend_query = p["name"]
@@ -538,7 +621,7 @@ if __name__ == "__main__":
             trend_query = p["pinterest_keywords"][0]
             
         trend_score, trend_dir = get_trend_score(trend_query)
-        saves                  = get_pinterest_saves(p["id"], auth)
+        saves, pin_count       = get_pinterest_saves(p["id"], auth)
         
         # Calculate Deltas (Momentum)
         prev_saves = p.get("pinterest_saves") or 0
@@ -546,6 +629,42 @@ if __name__ == "__main__":
         
         prev_trend = p.get("trend_score") or 0
         trend_delta = trend_score - prev_trend if prev_trend > 0 else 0
+
+        # ── Pinterest Performance Auto-Pause ─────────────────
+        # Use the real metrics from sync_metrics.py (already on products table)
+        total_imp   = p.get("total_impressions", 0) or 0
+        total_clk   = p.get("total_clicks", 0) or 0
+        total_sav   = p.get("total_saves", 0) or 0
+
+        # Find the earliest pin date for a fair trial period
+        if active_status and pin_count > 0:
+            try:
+                earliest_pin = supabase_get("pins", params={
+                    "product_id": f"eq.{p['id']}",
+                    "posted": "eq.true",
+                    "select": "created_at",
+                    "order": "created_at.asc",
+                    "limit": "1"
+                })
+                if earliest_pin:
+                    fp_dt = datetime.fromisoformat(
+                        earliest_pin[0]["created_at"].replace("Z", "+00:00")
+                    )
+                    days_since_first_pin = (datetime.now(timezone.utc) - fp_dt).days
+                else:
+                    days_since_first_pin = 0
+            except Exception:
+                days_since_first_pin = 0
+
+            # Primary signal: clicks (the money funnel)
+            if pin_count >= 3 and days_since_first_pin >= 7 and total_clk == 0 and total_sav == 0:
+                print(f"  ⚠️ AUTO-PAUSED: Zero clicks & saves after {pin_count} pins over {days_since_first_pin}d")
+                active_status = False
+                pause_reason  = f"Zero engagement ({pin_count} pins, {days_since_first_pin}d, {total_imp} imp)"
+            elif trend_dir == "falling" and total_clk == 0 and pin_count >= 2:
+                print(f"  ⚠️ AUTO-PAUSED: Falling trend + zero clicks")
+                active_status = False
+                pause_reason  = "Falling trend with no click-through"
 
         # ── 3. Keyword Research (if needed) ──────────────────
         keywords     = p.get("pinterest_keywords")
@@ -577,58 +696,70 @@ if __name__ == "__main__":
         )
 
         signals[p["asin"]] = {
-            "id":            p["id"],
-            "bsr":           bsr,
-            "trend_score":   trend_score,
-            "trend_dir":     trend_dir,
-            "trend_delta":   trend_delta,
-            "saves":         saves,
-            "save_delta":    save_delta,
-            "commission":    commission,
-            "price":         p.get("price", 0),
-            "category":      p.get("category", "unknown"),
-            "keywords":      keywords,
-            "active_status": active_status
+            "id":              p["id"],
+            "bsr":             bsr,
+            "trend_score":     trend_score,
+            "trend_dir":       trend_dir,
+            "trend_delta":     trend_delta,
+            "saves":           saves,
+            "save_delta":      save_delta,
+            "pin_count":       pin_count,
+            "commission":      commission,
+            "price":           p.get("price", 0),
+            "category":        p.get("category", "unknown"),
+            "keywords":        keywords,
+            "active_status":   active_status,
+            "pause_reason":    pause_reason
         }
 
         products_data.append({
-            "asin":        p["asin"],
-            "name":        p["name"],
-            "category":    p["category"],
-            "bsr_rank":    bsr,
-            "trend_score": trend_score,
-            "trend_dir":   trend_dir,
-            "saves":       saves,
-            "commission":  commission,
-            "keywords":    keywords
+            "asin":              p["asin"],
+            "name":              p["name"],
+            "category":          p["category"],
+            "price":             p.get("price", 0),
+            "total_impressions": total_imp,
+            "total_clicks":      total_clk,
+            "total_saves":       total_sav,
+            "bsr_rank":          bsr,
+            "trend_score":       trend_score,
+            "trend_dir":         trend_dir,
+            "saves":             saves,
+            "pin_count":         pin_count,
+            "commission":        commission,
+            "keywords":          keywords
         })
 
         # Wait longer between products to reduce pressure on Amazon/Google
         time.sleep(random.uniform(5, 8))
 
-    # Score with Gemini
-    print(f"\nScoring {len(products_data)} products with Gemini...")
-    scores = score_products_with_gemini(products_data)
+    # Deterministic scoring — no LLM needed
+    print(f"\nScoring {len(products_data)} products (deterministic formula)...")
+    scores = score_all_products(products_data, signals)
 
     # Save to Supabase
     print("\nSaving scores...")
     for s in scores:
         asin = s["asin"]
         sig  = signals.get(asin, {})
+        is_paused = not sig.get("active_status", True)
         save_score(
-            product_id  = sig["id"],
-            score       = s["score"],
-            reason      = s["reason"],
-            bsr         = sig.get("bsr"),
-            trend_score = sig.get("trend_score", 0),
-            trend_dir   = sig.get("trend_dir", "stable"),
-            trend_delta = sig.get("trend_delta", 0),
-            saves       = sig.get("saves", 0),
-            save_delta  = sig.get("save_delta", 0),
-            keywords    = sig.get("keywords", []),
-            active      = sig.get("active_status")
+            product_id   = sig["id"],
+            score        = s["score"],
+            reason       = s["reason"],
+            bsr          = sig.get("bsr"),
+            trend_score  = sig.get("trend_score", 0),
+            trend_dir    = sig.get("trend_dir", "stable"),
+            trend_delta  = sig.get("trend_delta", 0),
+            saves        = sig.get("saves", 0),
+            save_delta   = sig.get("save_delta", 0),
+            keywords     = sig.get("keywords", []),
+            active       = sig.get("active_status"),
+            pause_reason = sig.get("pause_reason")
         )
-        print(f"  {asin} → {s['score']}/100 — {s['reason']}")
+        status = "⏸️ PAUSED" if is_paused else "✅"
+        print(f"  {status} {asin} → {s['score']}/100 — {s['reason']}")
+        if is_paused:
+            print(f"     Reason: {sig.get('pause_reason')}")
 
     top         = max(scores, key=lambda x: x["score"])
     top_product = next(p for p in products if p["asin"] == top["asin"])
