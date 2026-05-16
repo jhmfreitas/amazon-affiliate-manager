@@ -239,6 +239,7 @@ def get_trend_score(keyword, fallback_niche=None):
     global TRENDS_RATE_LIMITED
     
     if TRENDS_RATE_LIMITED:
+        print("  Trends: Skipped (Global Rate Limit) — score=50.0 direction=stable")
         return 50.0, "stable"
         
     search_term = keyword
