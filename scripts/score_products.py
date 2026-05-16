@@ -173,21 +173,50 @@ def get_amazon_signals(asin, session=None):
                         if price_text: signals["price"] = float(price_text)
                     except: pass
 
-                # 3. BSR (Using our resilient methods)
-                # Method 1: The 'Additional Information' table
+                # 3. BSR extraction (Amazon UK format)
+                # UK pages use table.prodDetTable with format: "6,032 in Home & Kitchen" (no # symbol)
+                
+                # Method 1: prodDetTable (most common on Amazon UK)
+                prod_table = soup.select_one("table.prodDetTable")
+                if prod_table:
+                    bsr_th = prod_table.find("th", string=re.compile(r"Best\s*Sellers?\s*Rank", re.I))
+                    if bsr_th:
+                        bsr_td = bsr_th.find_next("td")
+                        if bsr_td:
+                            # Match with or without # prefix: "6,032 in" or "#6,032 in"
+                            match = re.search(r"#?([\d,]+)\s+in\s", bsr_td.get_text())
+                            if match:
+                                signals["bsr"] = int(match.group(1).replace(",", ""))
+                                print(f"  BSR: {signals['bsr']} (prodDetTable)")
+                                return signals
+
+                # Method 2: Any th/td with "Best Sellers Rank" text
                 table_cell = soup.find(["th", "td"], string=re.compile(r"Best\s*Sellers?\s*Rank", re.I))
                 if table_cell:
                     value_cell = table_cell.find_next("td") or table_cell
-                    match = re.search(r"#([\d,]+)", value_cell.get_text(strip=True))
+                    match = re.search(r"#?([\d,]+)", value_cell.get_text(strip=True))
                     if match:
                         signals["bsr"] = int(match.group(1).replace(",", ""))
+                        print(f"  BSR: {signals['bsr']} (table cell)")
                         return signals
 
-                match = re.search(r"Best\s*Sellers?\s*Rank:?\s*#([\d,]+)", resp.text, re.I)
+                # Method 3: Raw text search (fallback)
+                match = re.search(r"Best\s*Sellers?\s*Rank[:\s]*#?([\d,]+)", resp.text, re.I)
                 if match:
                     signals["bsr"] = int(match.group(1).replace(",", ""))
+                    print(f"  BSR: {signals['bsr']} (raw text)")
                     return signals
                 
+                # Method 4: detailBullets format (some product types)
+                bullets = soup.find(id="detailBulletsWrapper_feature_div")
+                if bullets:
+                    match = re.search(r"#?([\d,]+)\s+in\s", bullets.get_text())
+                    if match:
+                        signals["bsr"] = int(match.group(1).replace(",", ""))
+                        print(f"  BSR: {signals['bsr']} (detailBullets)")
+                        return signals
+
+                print(f"  BSR: Not found for {asin}")
                 return signals
             
             elif resp.status_code == 404:
