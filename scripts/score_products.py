@@ -232,8 +232,15 @@ def get_amazon_signals(asin, session=None):
 
 # ── 3. Google Trends ─────────────────────────────────────────
 
+TRENDS_RATE_LIMITED = False
+
 def get_trend_score(keyword, fallback_niche=None):
     """Get interest score (0.0-1.0) and direction for a keyword."""
+    global TRENDS_RATE_LIMITED
+    
+    if TRENDS_RATE_LIMITED:
+        return 50.0, "stable"
+        
     search_term = keyword
     # If the keyword is too long (Amazon titles), it fails on Trends.
     # We should prioritize shorter, high-intent keywords.
@@ -245,13 +252,14 @@ def get_trend_score(keyword, fallback_niche=None):
     for attempt in range(1, 4):
         try:
             from pytrends.request import TrendReq
-            pt = TrendReq(hl="en-GB", tz=0, timeout=(15, 30))
+            # Pass random user agent to avoid quick blocks
+            pt = TrendReq(hl="en-GB", tz=0, timeout=(15, 30), requests_args={"headers": random_headers()})
             
             # If second attempt, wait longer
             if attempt > 1:
-                time.sleep(random.uniform(20, 40))
+                time.sleep(random.uniform(15, 25))
             else:
-                time.sleep(random.uniform(5, 10))
+                time.sleep(random.uniform(4, 8))
             
             pt.build_payload([search_term], timeframe="now 7-d", geo="GB")
             data = pt.interest_over_time()
@@ -265,6 +273,7 @@ def get_trend_score(keyword, fallback_niche=None):
                     data = pt.interest_over_time()
             
             if data.empty or data.columns[0] not in data:
+                print(f"  Trends: score=50.0 direction=stable (no data)")
                 return 50.0, "stable"
 
             values = data[data.columns[0]].tolist()
@@ -287,11 +296,12 @@ def get_trend_score(keyword, fallback_niche=None):
             if "429" in str(e):
                 if attempt == 1:
                     continue # Try one more time
-                print(f"  Trends: 429 Rate Limit hit — using default")
+                print(f"  Trends: 429 Rate Limit hit — using default and skipping for remaining products.")
+                TRENDS_RATE_LIMITED = True
             else:
                 print(f"  Trends error: {e}")
-            return 50, "stable"
-    return 50, "stable"
+            return 50.0, "stable"
+    return 50.0, "stable"
 
 
 # ── 4. Pinterest pin saves for this product ──────────────────
