@@ -620,8 +620,9 @@ if __name__ == "__main__":
         time.sleep(2)
     except: pass
 
-    for p in products:
-        print(f"\n── {p['name']} ({p['asin']}) ──")
+    total_products = len(products)
+    for i, p in enumerate(products):
+        print(f"\n── [{i+1}/{total_products}] {p['name']} ({p['asin']}) ──")
 
         # ── 1. Smart Cooldown Check ──────────────────────────
         last_scored = p.get("last_scored_at")
