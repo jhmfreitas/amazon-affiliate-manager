@@ -274,7 +274,12 @@ def generate_candidates(product, count, keywords):
             if hasattr(e, 'response') and e.response is not None:
                 err_msg = e.response.text
             print(f"  Gemini Error (Attempt {attempt+1}/3): {err_msg}")
+            
+            # Fallback to gemini-2.0-flash on quota/availability issues
             if attempt < 2:
+                if "429" in err_msg or "503" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "UNAVAILABLE" in err_msg:
+                    print("  Switching to gemini-2.0-flash for next attempt...")
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
                 time.sleep(5 * (attempt + 1))
             else:
                 return []
