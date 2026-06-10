@@ -1127,13 +1127,21 @@ function render() {
                onerror="this.style.opacity='0'" />
           ${canEdit ? `
           <div class="img-hover">
+            <button class="img-action-btn" onclick="window.open('${esc(pin.image_url || '')}', '_blank')">
+              View Full Image
+            </button>
             <button class="img-action-btn" onclick="regenImage(${pin.id})">
               Random new image
             </button>
             <button class="img-action-btn" onclick="triggerUpload(${pin.id})">
               Upload my own
             </button>
-          </div>` : ''}
+          </div>` : `
+          <div class="img-hover">
+            <button class="img-action-btn" onclick="window.open('${esc(pin.image_url || '')}', '_blank')">
+              View Full Image
+            </button>
+          </div>`}
         </div>
 
         <div class="content-panel">
@@ -1234,6 +1242,12 @@ function render() {
               <div class="field-label">Board</div>
               <div style="font-size:11px;color:var(--muted);
                 font-family:'DM Mono',monospace;">${esc(pin.board_id)}</div>
+            </div>` : ''}
+            ${pin.template_style ? `
+            <div>
+              <div class="field-label">Template Style</div>
+              <div style="font-size:11px;color:var(--muted);
+                font-family:'DM Mono',monospace;">${esc(pin.template_style)}</div>
             </div>` : ''}
             ${pin.posted ? `
             <div class="product-signals" style="margin-top:12px; grid-template-columns: repeat(3, 1fr);">

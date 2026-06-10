@@ -297,7 +297,7 @@ def get_board_for_product(product):
     cat = (product.get("category") or "").lower()
     return BOARD_MAP.get(cat, DEFAULT_BOARD)
 
-def save_pin(pin, product, affiliate_url, board_id):
+def save_pin(pin, product, affiliate_url, board_id, template_style):
     score = product.get("score") or 0
     trend_dir = product.get("trend_dir") or "stable"
     auto_approve = score >= 85 and trend_dir in ("rising", "stable")
@@ -311,6 +311,7 @@ def save_pin(pin, product, affiliate_url, board_id):
         "link_url":      affiliate_url,
         "product_id":    product["id"],
         "board_id":      board_id,
+        "template_style": template_style,
         "approved":      auto_approve,
         "posted":        False
     }
@@ -351,7 +352,7 @@ if __name__ == "__main__":
                     img_bytes = create_pin_image(template_style, pexels_url, product.get('image_url', 'https://via.placeholder.com/800'), pin['title'])
                     pin['image_url'] = upload_image(img_bytes)
                     
-                    saved = save_pin(pin, product, affiliate_url, board_id)
+                    saved = save_pin(pin, product, affiliate_url, board_id, template_style)
                     print(f"  ✓ Saved Pin: {pin['title'][:40]}")
 
                 # Mark as pinned

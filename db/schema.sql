@@ -108,3 +108,6 @@ $$;
 create trigger enforce_allowlist
   before insert on auth.users
   for each row execute function public.check_user_allowed();
+
+
+ALTER TABLE pins ADD COLUMN template_style text;
