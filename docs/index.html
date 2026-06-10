@@ -561,6 +561,9 @@
       <span class="nav-dot" style="background:var(--blue);"></span> Products
       <span class="nav-count" id="nc-products">0</span>
     </button>
+    <button class="nav-btn" id="nav-performance" onclick="showSection('performance', this)">
+      <span class="nav-dot" style="background:var(--green);"></span> Performance
+    </button>
 
     <div class="nav-label">Settings</div>
     <button class="nav-btn" id="nav-pinterest" onclick="showSection('pinterest', this)">
@@ -623,6 +626,22 @@
       </div>
       <div id="product-list">
         <div class="loading"><span class="spinner"></span> Loading products…</div>
+      </div>
+    </div>
+
+    <!-- ── Performance section ── -->
+    <div id="performance-section" class="section-hidden">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Performance Dashboard</h1>
+          <p class="page-sub">Aggregated metrics across your posted pins</p>
+        </div>
+        <button class="btn-refresh" onclick="renderPerformance()">
+          <span id="perf-refresh-icon">↻</span> Refresh
+        </button>
+      </div>
+      <div id="performance-content">
+        <div class="loading"><span class="spinner"></span> Calculating performance data…</div>
       </div>
     </div>
 
@@ -855,12 +874,13 @@ function updateStats() {
 function setFilter(f, btn) {
   filter = f; editingId = null;
 
-  // If coming from products section, switch back to pins view
-  if (currentSection === 'products' || currentSection === 'pinterest') {
+  // If coming from another section, switch back to pins view
+  if (currentSection !== 'pins') {
     document.querySelector('.stats').style.display = '';
     document.getElementById('pin-list').style.display = '';
     document.getElementById('products-section').classList.add('section-hidden');
     document.getElementById('pinterest-section').classList.add('section-hidden');
+    document.getElementById('performance-section').classList.add('section-hidden');
     currentSection = 'pins';
   }
 
@@ -1342,18 +1362,23 @@ function showSection(section, btn) {
   const pinSection      = document.getElementById('pin-list');
   const productsSection = document.getElementById('products-section');
   const pinterestSection = document.getElementById('pinterest-section');
+  const performanceSection = document.getElementById('performance-section');
 
   // Hide all sections first
   document.querySelector('.stats').style.display = 'none';
   pinSection.style.display = 'none';
   productsSection.classList.add('section-hidden');
   pinterestSection.classList.add('section-hidden');
+  performanceSection.classList.add('section-hidden');
 
   if (section === 'products') {
     productsSection.classList.remove('section-hidden');
     loadAllProducts();
   } else if (section === 'pinterest') {
     pinterestSection.classList.remove('section-hidden');
+  } else if (section === 'performance') {
+    performanceSection.classList.remove('section-hidden');
+    renderPerformance();
   } else {
     // Default to pins
     document.querySelector('.stats').style.display = '';
@@ -1408,6 +1433,107 @@ async function toggleProduct(productId, currentActive) {
   allProducts.find(p => p.id === productId).active = !currentActive;
   renderProducts();
   toast(currentActive ? 'Product paused.' : 'Product activated.');
+}
+
+// ── Render performance ───────────────────────────────────────
+
+function renderPerformance() {
+  const content = document.getElementById('performance-content');
+  const postedPins = pins.filter(p => p.posted);
+  
+  if (!postedPins.length) {
+    content.innerHTML = `<div class="empty">No posted pins yet to calculate performance.</div>`;
+    return;
+  }
+
+  // 1. Account Totals
+  const totalImps = postedPins.reduce((sum, p) => sum + (p.impressions || 0), 0);
+  const totalClicks = postedPins.reduce((sum, p) => sum + (p.clicks || 0), 0);
+  const totalSaves = postedPins.reduce((sum, p) => sum + (p.saves || 0), 0);
+  const avgCtr = totalImps > 0 ? ((totalClicks / totalImps) * 100).toFixed(2) : '0.00';
+
+  // 2. Templates Grouping
+  const tplStats = {};
+  postedPins.forEach(p => {
+    const tpl = p.template_style || 'Unknown';
+    if (!tplStats[tpl]) tplStats[tpl] = { count: 0, imps: 0, clicks: 0, saves: 0 };
+    tplStats[tpl].count++;
+    tplStats[tpl].imps += (p.impressions || 0);
+    tplStats[tpl].clicks += (p.clicks || 0);
+    tplStats[tpl].saves += (p.saves || 0);
+  });
+  
+  const templatesHtml = Object.entries(tplStats)
+    .sort((a, b) => b[1].clicks - a[1].clicks) // sort by clicks desc
+    .map(([tpl, s]) => {
+      const ctr = s.imps > 0 ? ((s.clicks / s.imps) * 100).toFixed(2) : '0.00';
+      return `
+        <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+          <span style="font-family:'DM Mono',monospace; font-size:12px; font-weight:600;">${esc(tpl)}</span>
+          <div style="display:flex; gap:20px; font-size:12px; font-family:'DM Mono',monospace;">
+            <span style="width:60px; text-align:right;" title="Pins"><span style="color:var(--faint)">Pins:</span> ${s.count}</span>
+            <span style="width:70px; text-align:right;" title="Clicks"><span style="color:var(--faint)">C:</span> ${s.clicks}</span>
+            <span style="width:60px; text-align:right; color:var(--blue);" title="CTR">${ctr}%</span>
+          </div>
+        </div>`;
+    }).join('');
+
+  // 3. Top 5 Pins
+  const topPins = [...postedPins]
+    .sort((a, b) => (b.clicks || 0) - (a.clicks || 0))
+    .slice(0, 5);
+
+  const topPinsHtml = topPins.map((p, i) => `
+    <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border);">
+      <div style="font-family:'DM Mono',monospace; font-size:16px; font-weight:600; color:var(--muted); width:20px;">#${i+1}</div>
+      <img src="${esc(p.image_url)}" style="width:40px; height:40px; border-radius:6px; object-fit:cover;" />
+      <div style="flex:1;">
+        <div style="font-size:13px; font-weight:500;">${esc(p.title.substring(0, 50))}${p.title.length > 50 ? '...' : ''}</div>
+        <div style="font-size:11px; font-family:'DM Mono',monospace; color:var(--faint);">Template: ${esc(p.template_style || 'Unknown')}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:14px; font-weight:600; font-family:'DM Mono',monospace; color:var(--blue);">${(p.clicks || 0).toLocaleString()}</div>
+        <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Clicks</div>
+      </div>
+    </div>
+  `).join('');
+
+  content.innerHTML = `
+    <!-- Stats Grid -->
+    <div class="stats" style="margin-bottom: 30px;">
+      <div class="stat">
+        <div class="stat-label">Total Impressions</div>
+        <div class="stat-val">${totalImps.toLocaleString()}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Total Clicks</div>
+        <div class="stat-val" style="color:var(--blue);">${totalClicks.toLocaleString()}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Average CTR</div>
+        <div class="stat-val" style="color:var(--accent);">${avgCtr}%</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Total Saves</div>
+        <div class="stat-val" style="color:var(--green);">${totalSaves.toLocaleString()}</div>
+      </div>
+    </div>
+
+    <!-- Breakdown Grid -->
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+      <!-- Templates -->
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px;">
+        <h3 style="font-size:15px; font-weight:600; margin-bottom:16px;">Template Performance</h3>
+        ${templatesHtml}
+      </div>
+
+      <!-- Leaderboard -->
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px;">
+        <h3 style="font-size:15px; font-weight:600; margin-bottom:16px;">Top 5 Pins</h3>
+        ${topPinsHtml}
+      </div>
+    </div>
+  `;
 }
 
 // ── Render products ──────────────────────────────────────────
