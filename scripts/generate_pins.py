@@ -250,9 +250,6 @@ def generate_candidates(product, count, keywords):
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.7}
     }
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    
     for attempt in range(3):
         try:
             resp = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=20)
