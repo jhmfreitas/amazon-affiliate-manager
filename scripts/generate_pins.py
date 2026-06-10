@@ -105,22 +105,22 @@ def wrap_text(text, font, max_width):
     return lines
 
 def get_font(size):
-    font_path = "assets/fonts/Inter-Bold.ttf"
-    if not os.path.exists("assets/fonts"):
-        os.makedirs("assets/fonts", exist_ok=True)
-    if not os.path.exists(font_path):
-        import urllib.request
-        try:
-            print("  Downloading Inter font...")
-            url = "https://github.com/rsms/inter/raw/master/docs/font-files/Inter-Bold.ttf"
-            urllib.request.urlretrieve(url, font_path)
-        except Exception as e:
-            print(f"  Failed to download font: {e}")
-            return ImageFont.load_default()
-    try:
-        return ImageFont.truetype(font_path, size)
-    except IOError:
-        return ImageFont.load_default()
+    # Try common system bold fonts
+    font_paths = [
+        "C:/Windows/Fonts/segoeuib.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf"
+    ]
+    
+    for path in font_paths:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except IOError:
+                pass
+                
+    return ImageFont.load_default()
 
 def create_pin_image(template_style, bg_url, product_url, title):
     # Download images
@@ -246,30 +246,41 @@ def generate_candidates(product, count, keywords):
     Format: JSON list of objects with 'title', 'description', 'alt_text', 'keywords', 'pexels_search'.
     'keywords' should be a list of 5-8 short search phrases (no hashtags).
     """
-    resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-    data = resp.json()
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.7}
+    }
     
-    if "candidates" not in data:
-        print(f"  Gemini Error: {json.dumps(data)}")
-        raise ValueError(f"Gemini failed: {data.get('error', {}).get('message', 'Unknown error')}")
-        
-    txt = data['candidates'][0]['content']['parts'][0]['text']
-    candidates = json.loads(re.search(r"\[.*\]", txt, re.S).group(0))
-
-    # Smart Sentence-Aware Truncation
-    for c in candidates:
-        if len(c['description']) > 500:
-            text = c['description'][:500]
-            # Look for the last sentence-ender (. ! or ?)
-            last_punc = max(text.rfind('.'), text.rfind('!'), text.rfind('?'))
-            if last_punc > 100: # Ensure we didn't cut off too much
-                c['description'] = text[:last_punc + 1]
-            else:
-                # Fallback to last space if no punctuation found
-                last_space = text.rfind(' ')
-                c['description'] = text[:last_space] + "..."
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=20)
+            resp.raise_for_status()
+            data = resp.json()
+            raw_text = data['candidates'][0]['content']['parts'][0]['text']
             
-    return candidates
+            # Clean markdown code block if present
+            raw_text = raw_text.strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+                
+            candidates = json.loads(raw_text.strip())
+            return score_candidates(candidates, product)
+            
+        except Exception as e:
+            err_msg = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                err_msg = e.response.text
+            print(f"  Gemini Error (Attempt {attempt+1}/3): {err_msg}")
+            if attempt < 2:
+                time.sleep(5 * (attempt + 1))
+            else:
+                return []
 
 def score_candidates(candidates, product):
     # Score candidates based on title length and keyword presence
