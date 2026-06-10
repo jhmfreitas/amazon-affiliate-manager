@@ -21,7 +21,7 @@ from config import (
 # Secrets
 AMAZON_CRED_ID  = os.environ["AMAZON_CREDENTIAL_ID"]
 AMAZON_CRED_SEC = os.environ["AMAZON_CREDENTIAL_SECRET"]
-AMAZON_TAG      = os.environ["AMAZON_ASSOCIATE_TAG"]
+AMAZON_TAG      = os.environ.get("AMAZON_ASSOCIATE_TAG", "pinnpurchas0f-21")
 
 try:
     from amazon_creatorsapi import AmazonCreatorsApi, Country
@@ -35,10 +35,9 @@ except ImportError:
 # ── NICHES & TARGETS ─────────────────────────────────────────
 
 NICHES = [
-    {"name": "home office", "category": "home_kitchen", "audience": "remote workers, freelancers"},
-    {"name": "aesthetic desk", "category": "home_kitchen", "audience": "remote workers, gamers"},
-    {"name": "fitness gear", "category": "sports", "audience": "gym-goers, home workout enthusiasts"},
-    {"name": "skincare", "category": "beauty", "audience": "beauty enthusiasts"},
+    {"name": "home aesthetic", "category": "home", "audience": "homeowners, renters, decor enthusiasts"},
+    {"name": "affordable fashion", "category": "apparel", "audience": "fashion enthusiasts, budget shoppers"},
+    {"name": "skincare routine", "category": "beauty", "audience": "beauty enthusiasts"},
 ]
 
 # We want products with deals, high ratings, and Prime shipping.

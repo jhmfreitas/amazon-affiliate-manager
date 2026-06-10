@@ -3,9 +3,14 @@ name: Post daily pin
 on:
   workflow_dispatch:          # manual trigger for testing
   schedule:
-    - cron: "0 6 * * *"   # 9 AM UK (BST/UTC+1) with delay
-    - cron: "0 15 * * *"  # 5 PM UK (BST/UTC+1) with delay
-    - cron: "0 18 * * *"  # 8 PM UK (BST/UTC+1) with delay
+    - cron: "0 6 * * *"   # 7 AM UK
+    - cron: "0 8 * * *"   # 9 AM UK
+    - cron: "0 10 * * *"  # 11 AM UK
+    - cron: "0 12 * * *"  # 1 PM UK
+    - cron: "0 14 * * *"  # 3 PM UK
+    - cron: "0 16 * * *"  # 5 PM UK
+    - cron: "0 18 * * *"  # 7 PM UK
+    - cron: "0 20 * * *"  # 9 PM UK
 
 jobs:
   post:

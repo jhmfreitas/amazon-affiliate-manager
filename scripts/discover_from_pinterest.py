@@ -24,16 +24,13 @@ from config import (
 
 # ── CONFIGURATION ───────────────────────────────────────────
 
-AMAZON_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "jhmf-21") # Fallback if not set
+AMAZON_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "pinnpurchas0f-21") # Fallback if not set
 MIN_PRICE  = 15.0
 
 NICHES = [
-    {"name": "aesthetic kitchen", "category": "home_kitchen", "audience": "home cooks, decor enthusiasts"},
-    {"name": "cozy bedroom", "category": "home_kitchen", "audience": "renters, students"},
+    {"name": "home aesthetic", "category": "home", "audience": "homeowners, renters, decor enthusiasts"},
+    {"name": "affordable fashion", "category": "apparel", "audience": "fashion enthusiasts, budget shoppers"},
     {"name": "skincare routine", "category": "beauty", "audience": "beauty enthusiasts"},
-    {"name": "fitness motivation", "category": "sports", "audience": "home workout enthusiasts"},
-    {"name": "capsule wardrobe", "category": "fashion", "audience": "minimalists, fashionistas"},
-    {"name": "home organization", "category": "home_kitchen", "audience": "busy parents, organizers"},
 ]
 
 # ── 1. PINTEREST DEMAND (UK + US) ──────────────────────────
@@ -68,12 +65,19 @@ def get_pinterest_trends(query, region="GB"):
 def get_demand_keywords(niche):
     log.info(f"Researching global Pinterest demand for: {niche['name']}")
     
+    seeds = [
+        f"{niche['name']} ideas",
+        f"best {niche['name']}",
+        f"{niche['name']} aesthetic",
+        f"{niche['name']} must haves",
+    ]
+    
     all_suggestions = []
     for region in ["GB", "US"]:
-        # We search for the niche name directly + "ideas" to get the best trends
-        suggestions = get_pinterest_trends(niche['name'], region)
-        all_suggestions.extend(suggestions)
-        time.sleep(0.5)
+        for seed in seeds:
+            suggestions = get_pinterest_trends(seed, region)
+            all_suggestions.extend(suggestions)
+            time.sleep(0.3)
             
     # Clean up: Remove the word "pinterest" and "ideas" from the keywords
     unique = list(dict.fromkeys(all_suggestions))
