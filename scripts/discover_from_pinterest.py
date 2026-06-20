@@ -56,7 +56,7 @@ def get_pinterest_trends(query, region="GB"):
     url = "https://suggestqueries.google.com/complete/search"
     params = {
         "client": "firefox",
-        "q": f"{query} pinterest",
+        "q": query,
         "hl": "en-GB" if region == "GB" else "en-US",
         "gl": region.lower()
     }
@@ -115,6 +115,11 @@ def scrape_amazon_search(keyword):
     
     try:
         resp = requests.get(url, headers=headers, cookies=get_amazon_cookies(), timeout=15)
+        
+        if resp.status_code != 200:
+            log.warning(f"  Amazon returned status {resp.status_code} for keyword: {keyword}")
+            return []
+            
         if "api-services-support@amazon.com" in resp.text:
             log.warning(f"  Search blocked (CAPTCHA) for keyword: {keyword}")
             return []
