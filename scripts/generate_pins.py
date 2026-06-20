@@ -24,17 +24,12 @@ CANDIDATES = 2   # How many AI variations to brainstorm
 KEEP_TOP   = 1   # How many to actually save
 AMAZON_COUNTRY = "co.uk"
 BOARD_MAP = {
-    "kitchen":          "1128785162794432309",  # Amazon Kitchen Finds
-    "home_kitchen":     "1128785162794432309",  # Amazon Kitchen Finds
-    "home office":      "1128785162794453530",  # Desk Setup & WFH Tools
-    "home":             "1128785162794432647",  # Budget Home Upgrades
-    "furniture":        "1128785162794432647",
-    "fitness":          "1128785162794443172",
-    "gaming":           "1128785162794246440",
-    "fashion":          "1128785162795137672",
-    "gifts":            "1128785162794136690"
+    "clothing":   "1128785162795137672",  # Fashion Finds Under £50
+    "fashion":    "1128785162795287251",  # Bags & Accessories
+    "shoes":      "1128785162795287253",  # Women's Shoes & Boots
+    "jewellery":  "1128785162795287250",  # Jewellery Finds
 }
-DEFAULT_BOARD = "1128785162794453906"
+DEFAULT_BOARD = "1128785162795137672"  # Fashion Finds Under £50
 
 # ── 1. Rotation Candidates ────────────────────────────────────
 

@@ -35,9 +35,21 @@ except ImportError:
 # ── NICHES & TARGETS ─────────────────────────────────────────
 
 NICHES = [
-    {"name": "home aesthetic", "category": "home", "audience": "homeowners, renters, decor enthusiasts"},
-    {"name": "affordable fashion", "category": "apparel", "audience": "fashion enthusiasts, budget shoppers"},
-    {"name": "skincare routine", "category": "beauty", "audience": "beauty enthusiasts"},
+    # Clothing – specific sub-niches that match real Pinterest searches
+    {"name": "summer dresses women",       "category": "clothing",  "audience": "women looking for casual and going-out dresses"},
+    {"name": "women's co-ord sets",        "category": "clothing",  "audience": "women who love matching outfit sets and effortless style"},
+    {"name": "women's going out tops",     "category": "clothing",  "audience": "women looking for date night and night out outfits"},
+
+    # Shoes – product-level specificity
+    {"name": "white sneakers women",       "category": "shoes",     "audience": "women looking for clean everyday trainers"},
+    {"name": "heeled boots women",         "category": "shoes",     "audience": "women who love ankle boots and heeled boots"},
+
+    # Jewellery – trending styles
+    {"name": "gold layered necklaces",     "category": "jewellery", "audience": "women who love dainty gold jewellery and layering"},
+    {"name": "sterling silver rings women","category": "jewellery", "audience": "women looking for minimalist and stackable rings"},
+
+    # Accessories – high-intent items
+    {"name": "crossbody bags women",       "category": "fashion",   "audience": "women looking for everyday and going-out bags"},
 ]
 
 # We want products with deals, high ratings, and Prime shipping.
@@ -63,10 +75,11 @@ def google_autocomplete(query, lang="en", country="uk"):
 def get_demand_keywords(niche):
     log.info(f"Researching demand for niche: {niche['name']}")
     seeds = [
-        f"{niche['name']} ideas pinterest",
-        f"best {niche['name']}",
-        f"{niche['name']} aesthetic",
-        f"{niche['name']} must haves",
+        f"{niche['name']} outfit ideas",
+        f"best {niche['name']} amazon",
+        f"{niche['name']} trending 2025",
+        f"{niche['name']} under £50",
+        f"{niche['name']} pinterest",
     ]
     
     all_suggestions = []
