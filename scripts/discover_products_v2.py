@@ -77,7 +77,7 @@ def get_demand_keywords(niche):
     seeds = [
         f"{niche['name']} outfit ideas",
         f"best {niche['name']} amazon",
-        f"{niche['name']} trending 2025",
+        f"{niche['name']} trending {datetime.now().year}",
         f"{niche['name']} under £50",
         f"{niche['name']} pinterest",
     ]
