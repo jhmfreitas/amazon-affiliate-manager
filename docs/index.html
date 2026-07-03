@@ -846,10 +846,10 @@ async function loadPins() {
   document.getElementById('refresh-icon').innerHTML =
     '<span class="spinner"></span>';
 
-  // Fetch pins, active products (for pin cards), and ALL products count in parallel
+  // Fetch pins, products (for pin cards & lookup), and ALL products count in parallel
   const [pinsRes, productsRes, allProductsCountRes] = await Promise.all([
     db.from('pins').select('*, impressions, clicks, saves').order('created_at', { ascending: false }),
-    db.from('products').select('id, name, category, score, commission, affiliate_url, price').eq('active', true),
+    db.from('products').select('id, name, category, score, commission, affiliate_url, price'),
     db.from('products').select('id', { count: 'exact', head: true })
   ]);
 
