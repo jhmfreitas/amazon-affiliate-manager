@@ -561,6 +561,9 @@
       <span class="nav-dot" style="background:var(--blue);"></span> Products
       <span class="nav-count" id="nc-products">0</span>
     </button>
+    <button class="nav-btn" id="nav-queue" onclick="showSection('queue', this)">
+      <span class="nav-dot" style="background:#8b5cf6;"></span> Post Queue
+    </button>
     <button class="nav-btn" id="nav-performance" onclick="showSection('performance', this)">
       <span class="nav-dot" style="background:var(--green);"></span> Performance
     </button>
@@ -609,6 +612,13 @@
       </div>
     </div>
 
+    <div id="bulk-actions" style="display:none; padding: 12px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; align-items: center; gap: 14px;">
+      <input type="checkbox" id="select-all" onclick="toggleSelectAll(this.checked)" style="width: 16px; height: 16px; cursor: pointer;" />
+      <span style="font-size: 13px; font-weight: 500;"><span id="selected-count">0</span> selected</span>
+      <button class="btn-approve" onclick="bulkApprove()" style="margin-left: auto; padding: 6px 14px;">Approve Selected</button>
+      <button class="btn-danger" onclick="bulkRemove()" style="padding: 6px 14px;">Delete Selected</button>
+    </div>
+
     <div id="pin-list">
       <div class="loading"><span class="spinner"></span> Loading pins…</div>
     </div>
@@ -636,12 +646,34 @@
           <h1 class="page-title">Performance Dashboard</h1>
           <p class="page-sub">Aggregated metrics across your posted pins</p>
         </div>
-        <button class="btn-refresh" onclick="renderPerformance()">
-          <span id="perf-refresh-icon">↻</span> Refresh
-        </button>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <input type="file" id="csv-upload" accept=".csv" style="display:none;" onchange="handleCSVUpload(event)">
+          <button class="btn-secondary" onclick="document.getElementById('csv-upload').click()">
+            Upload Amazon CSV
+          </button>
+          <button class="btn-refresh" onclick="renderPerformance()">
+            <span id="perf-refresh-icon">↻</span> Refresh
+          </button>
+        </div>
       </div>
       <div id="performance-content">
         <div class="loading"><span class="spinner"></span> Calculating performance data…</div>
+      </div>
+    </div>
+
+    <!-- ── Queue section ── -->
+    <div id="queue-section" class="section-hidden">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Post Queue</h1>
+          <p class="page-sub">Drag and drop to reorder approved pins. The top pin goes out next.</p>
+        </div>
+        <button class="btn-refresh" onclick="renderQueue()">
+          <span id="queue-refresh-icon">↻</span> Refresh
+        </button>
+      </div>
+      <div id="queue-list" style="display: flex; flex-direction: column; gap: 8px;">
+        <div class="loading"><span class="spinner"></span> Loading queue…</div>
       </div>
     </div>
 
@@ -695,6 +727,7 @@ let filter      = 'all';
 let editingId   = null;
 let uploadForId = null;
 let currentUser = null;
+let selectedPins= new Set();
 
 // ── Auth ─────────────────────────────────────────────────────
 
@@ -873,6 +906,7 @@ function updateStats() {
 
 function setFilter(f, btn) {
   filter = f; editingId = null;
+  selectedPins.clear();
 
   // If coming from another section, switch back to pins view
   if (currentSection !== 'pins') {
@@ -974,6 +1008,113 @@ async function postNow(id) {
   }
 }
 
+// ── Bulk Actions & Inline Edit ───────────────────────────────
+
+function toggleSelect(id) {
+  if (selectedPins.has(id)) selectedPins.delete(id);
+  else selectedPins.add(id);
+  renderBulkActions();
+}
+
+function toggleSelectAll(checked) {
+  const pendingPins = pins.filter(p => getStatus(p) === 'pending');
+  if (checked) {
+    pendingPins.forEach(p => selectedPins.add(p.id));
+  } else {
+    selectedPins.clear();
+  }
+  
+  // Update all individual checkboxes to match
+  document.querySelectorAll('.pin-checkbox').forEach(cb => {
+    cb.checked = checked;
+  });
+  
+  renderBulkActions();
+}
+
+function renderBulkActions() {
+  const bar = document.getElementById('bulk-actions');
+  const countEl = document.getElementById('selected-count');
+  
+  if (filter === 'pending' && pins.filter(p => getStatus(p) === 'pending').length > 0) {
+    bar.style.display = 'flex';
+    countEl.textContent = selectedPins.size;
+    document.getElementById('select-all').checked = selectedPins.size > 0 && selectedPins.size === pins.filter(p => getStatus(p) === 'pending').length;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function bulkApprove() {
+  if (selectedPins.size === 0) return;
+  toast(`Approving ${selectedPins.size} pins...`);
+  
+  const ids = Array.from(selectedPins);
+  const { error } = await db.from('pins').update({ approved: true }).in('id', ids);
+  
+  if (error) { toast('Error: ' + error.message); return; }
+  
+  pins.forEach(p => {
+    if (selectedPins.has(p.id)) p.approved = true;
+  });
+  
+  selectedPins.clear();
+  updateStats(); render(); toast('Bulk approved successfully!');
+}
+
+async function bulkRemove() {
+  if (selectedPins.size === 0) return;
+  if (!confirm(`Permanently delete ${selectedPins.size} pins?`)) return;
+  toast(`Deleting ${selectedPins.size} pins...`);
+  
+  const ids = Array.from(selectedPins);
+  const { error } = await db.from('pins').delete().in('id', ids);
+  
+  if (error) { toast('Error: ' + error.message); return; }
+  
+  pins = pins.filter(p => !selectedPins.has(p.id));
+  selectedPins.clear();
+  updateStats(); render(); toast('Pins removed.');
+}
+
+async function saveInlineEdit(id, field, value) {
+  const pin = pins.find(p => p.id === id);
+  if (!pin || pin[field] === value) return; // No change
+  
+  const { error } = await db.from('pins').update({ [field]: value }).eq('id', id);
+  if (!error) {
+    pin[field] = value;
+    // Don't toast for seamless typing experience unless error
+  } else {
+    toast(`Failed to save ${field}`);
+  }
+}
+
+// ── Keyboard Shortcuts ───────────────────────────────────────
+
+window.addEventListener('keydown', (e) => {
+  // Only apply in pending view
+  if (currentSection !== 'pins' || filter !== 'pending') return;
+  
+  // Don't trigger if user is actively typing in an input or textarea
+  if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+  const pendingPins = pins.filter(p => getStatus(p) === 'pending');
+  if (!pendingPins.length) return;
+  
+  const topPin = pendingPins[0];
+
+  if (e.key === 'a' || e.key === 'A') {
+    e.preventDefault();
+    approve(topPin.id);
+  } else if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault();
+    remove(topPin.id);
+  } else if (e.code === 'Space') {
+    // Let native spacebar scrolling work, or we could auto-scroll to next
+  }
+});
+
 // ── Remove ───────────────────────────────────────────────────
 
 async function remove(id) {
@@ -981,6 +1122,7 @@ async function remove(id) {
   const { error } = await db.from('pins').delete().eq('id', id);
   if (error) { toast('Error: ' + error.message); return; }
   pins = pins.filter(p => p.id !== id);
+  selectedPins.delete(id);
   updateStats(); render(); toast('Pin removed.');
 }
 
@@ -1167,6 +1309,7 @@ function render() {
         <div class="content-panel">
           <div class="pin-top">
             <div style="display:flex;gap:6px;align-items:center;">
+              ${status === 'pending' ? `<input type="checkbox" class="pin-checkbox" value="${pin.id}" ${selectedPins.has(pin.id) ? 'checked' : ''} onchange="toggleSelect(${pin.id})" style="width: 16px; height: 16px; cursor: pointer;" />` : ''}
               <span class="badge badge-${status}">${status}</span>
               ${isUpNext ? '<span class="badge" style="background:var(--blue);color:white;border:none;">UP NEXT</span>' : ''}
             </div>
@@ -1200,35 +1343,40 @@ function render() {
             </div>`;
           })()}
 
-          ${isEditing ? `
+          ${(isEditing || status === 'pending') ? `
             <div>
               <div class="field-label">Title</div>
               <input id="t-${pin.id}" class="edit-input"
-                value="${esc(pin.title)}" maxlength="100" />
+                value="${esc(pin.title)}" maxlength="100" 
+                onblur="saveInlineEdit(${pin.id}, 'title', this.value)" />
             </div>
             <div>
               <div class="field-label">Description <span style="font-weight:400;color:${pin.description.length > 500 ? 'var(--red)' : 'var(--faint)'}">(${pin.description.length}/500 chars)</span></div>
               <textarea id="d-${pin.id}" class="edit-textarea" maxlength="500"
                 style="min-height:120px;"
-                oninput="this.previousElementSibling.querySelector('span').textContent='('+this.value.length+'/500 chars)';this.previousElementSibling.querySelector('span').style.color=this.value.length>500?'var(--red)':'var(--faint)'">${esc(pin.description)}</textarea>
+                oninput="this.previousElementSibling.querySelector('span').textContent='('+this.value.length+'/500 chars)';this.previousElementSibling.querySelector('span').style.color=this.value.length>500?'var(--red)':'var(--faint)'"
+                onblur="saveInlineEdit(${pin.id}, 'description', this.value)">${esc(pin.description)}</textarea>
             </div>
             <div>
               <div class="field-label">Alt text (accessibility) <span style="font-weight:400;color:var(--faint)">(${(pin.alt_text||'').length}/500 chars)</span></div>
               <textarea id="alt-${pin.id}" class="edit-textarea" maxlength="500"
-                style="min-height:55px;" placeholder="Describe the image for visually impaired users…">${esc(pin.alt_text || '')}</textarea>
+                style="min-height:55px;" placeholder="Describe the image for visually impaired users…"
+                onblur="saveInlineEdit(${pin.id}, 'alt_text', this.value)">${esc(pin.alt_text || '')}</textarea>
             </div>
             <div>
               <div class="field-label">Keywords (SEO reference) — comma separated</div>
               <textarea id="h-${pin.id}" class="edit-textarea" 
                 style="min-height:55px;"
-                placeholder="e.g. standing desk ideas, home office setup, remote work">${esc((pin.keywords || []).join(', '))}</textarea>
+                placeholder="e.g. standing desk ideas, home office setup, remote work"
+                onblur="saveInlineEdit(${pin.id}, 'keywords', this.value.split(',').map(t=>t.trim()).filter(Boolean))">${esc((pin.keywords || []).join(', '))}</textarea>
             </div>
             <div>
               <div class="field-label">Image search query</div>
               <div class="search-row">
                 <input id="search-${pin.id}" class="edit-input"
                   value="${esc(pin.pexels_search || '')}"
-                  placeholder="e.g. home office natural light" />
+                  placeholder="e.g. home office natural light" 
+                  onblur="saveInlineEdit(${pin.id}, 'pexels_search', this.value)" />
                 <button class="btn-fetch"
                   onclick="changeSearch(${pin.id})">Fetch image</button>
               </div>
@@ -1237,7 +1385,8 @@ function render() {
               <div class="field-label">Affiliate link</div>
               <input id="link-edit-${pin.id}" class="edit-input"
                 value="${esc(pin.link_url || '')}"
-                placeholder="https://amazon.co.uk/dp/ASIN?tag=yourtag-21" />
+                placeholder="https://amazon.co.uk/dp/ASIN?tag=yourtag-21" 
+                onblur="saveInlineEdit(${pin.id}, 'link_url', this.value)" />
             </div>
           ` : `
             <div>
@@ -1327,7 +1476,7 @@ function render() {
               <button class="btn-save" onclick="saveEdit(${pin.id})">Save changes</button>
             ` : `
               <button class="btn-danger" onclick="remove(${pin.id})">Remove</button>
-              <button class="btn-secondary" onclick="startEdit(${pin.id})">Edit</button>
+              ${status !== 'pending' ? `<button class="btn-secondary" onclick="startEdit(${pin.id})">Edit</button>` : ''}
               ${pin.approved
                 ? `<div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
                     <button class="btn-secondary" style="padding:6px 14px;font-size:11px;" 
@@ -1336,7 +1485,7 @@ function render() {
                       onclick="postNow(${pin.id})">Post Now</button>
                   </div>`
                 : `<button class="btn-approve"
-                    onclick="approve(${pin.id})">Approve</button>`
+                    onclick="approve(${pin.id})">Approve <span style="font-size:10px; opacity:0.7; margin-left:4px;">(A)</span></button>`
               }
             `}
           </div>
@@ -1363,13 +1512,16 @@ function showSection(section, btn) {
   const productsSection = document.getElementById('products-section');
   const pinterestSection = document.getElementById('pinterest-section');
   const performanceSection = document.getElementById('performance-section');
+  const queueSection = document.getElementById('queue-section');
 
   // Hide all sections first
   document.querySelector('.stats').style.display = 'none';
+  document.getElementById('bulk-actions').style.display = 'none';
   pinSection.style.display = 'none';
   productsSection.classList.add('section-hidden');
   pinterestSection.classList.add('section-hidden');
   performanceSection.classList.add('section-hidden');
+  queueSection.classList.add('section-hidden');
 
   if (section === 'products') {
     productsSection.classList.remove('section-hidden');
@@ -1379,10 +1531,14 @@ function showSection(section, btn) {
   } else if (section === 'performance') {
     performanceSection.classList.remove('section-hidden');
     renderPerformance();
+  } else if (section === 'queue') {
+    queueSection.classList.remove('section-hidden');
+    renderQueue();
   } else {
     // Default to pins
     document.querySelector('.stats').style.display = '';
     pinSection.style.display = '';
+    renderBulkActions();
   }
 }
 
@@ -1435,7 +1591,190 @@ async function toggleProduct(productId, currentActive) {
   toast(currentActive ? 'Product paused.' : 'Product activated.');
 }
 
+// ── Render Queue ─────────────────────────────────────────────
+
+let draggedItem = null;
+
+function renderQueue() {
+  const list = document.getElementById('queue-list');
+  const approvedPins = pins
+    .filter(p => getStatus(p) === 'approved')
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  if (!approvedPins.length) {
+    list.innerHTML = `<div class="empty">No approved pins in queue.</div>`;
+    return;
+  }
+
+  list.innerHTML = approvedPins.map((pin, i) => `
+    <div class="queue-item" draggable="true" data-id="${pin.id}" 
+         style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; align-items: center; gap: 16px; cursor: grab; transition: border-color 0.2s;"
+         ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">
+      <div style="color: var(--faint); cursor: grab;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      </div>
+      <div style="font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 600; color: var(--muted); width: 24px;">
+        ${i + 1}
+      </div>
+      <img src="${esc(pin.image_url)}" style="width: 48px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border);" />
+      <div style="flex: 1;">
+        <div style="font-size: 14px; font-weight: 500;">${esc(pin.title)}</div>
+        <div style="font-size: 11px; color: var(--faint); font-family: 'DM Mono', monospace; margin-top: 4px;">Created: ${new Date(pin.created_at).toLocaleString('en-GB')}</div>
+      </div>
+      ${i === 0 ? `<div class="badge badge-approved" style="background: var(--blue); color: white; border: none;">UP NEXT</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function handleDragStart(e) {
+  draggedItem = e.target.closest('.queue-item');
+  draggedItem.style.opacity = '0.5';
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const target = e.target.closest('.queue-item');
+  if (target && target !== draggedItem) {
+    target.style.borderTop = '2px solid var(--blue)';
+  }
+}
+
+function handleDragEnd(e) {
+  draggedItem.style.opacity = '1';
+  document.querySelectorAll('.queue-item').forEach(el => el.style.borderTop = '');
+}
+
+async function handleDrop(e) {
+  e.preventDefault();
+  const target = e.target.closest('.queue-item');
+  document.querySelectorAll('.queue-item').forEach(el => el.style.borderTop = '');
+  
+  if (target && target !== draggedItem) {
+    const list = document.getElementById('queue-list');
+    const items = Array.from(list.children);
+    const draggedIndex = items.indexOf(draggedItem);
+    const targetIndex = items.indexOf(target);
+    
+    if (draggedIndex < targetIndex) {
+      target.after(draggedItem);
+    } else {
+      target.before(draggedItem);
+    }
+    
+    await saveQueueOrder();
+  }
+}
+
+async function saveQueueOrder() {
+  toast('Saving queue order...');
+  const items = Array.from(document.querySelectorAll('.queue-item'));
+  const newOrderIds = items.map(el => parseInt(el.dataset.id));
+  
+  // Since our cron job pulls "ORDER BY created_at ASC", we need to update created_at timestamps.
+  // We'll stagger them by 1 second, starting from right now.
+  const now = new Date();
+  const updates = newOrderIds.map((id, index) => {
+    // Top of queue = oldest timestamp.
+    const newTime = new Date(now.getTime() + (index * 1000));
+    return {
+      id: id,
+      created_at: newTime.toISOString()
+    };
+  });
+  
+  // Supabase doesn't easily support bulk upserting with different values without an RPC or upsert
+  // Since it's usually < 20 pins in queue, we can just do individual updates, or standard upsert.
+  // Actually, we can fetch all approved pins, modify them, and upsert.
+  const pinsToUpdate = updates.map(u => {
+    const p = Object.assign({}, pins.find(pin => pin.id === u.id));
+    p.created_at = u.created_at;
+    return p;
+  });
+
+  const { error } = await db.from('pins').upsert(pinsToUpdate);
+  
+  if (error) {
+    toast('Error saving order: ' + error.message);
+  } else {
+    // Update local state
+    updates.forEach(u => {
+      const p = pins.find(pin => pin.id === u.id);
+      if (p) p.created_at = u.created_at;
+    });
+    toast('Queue updated!');
+    renderQueue(); // Re-render to update the # numbers
+  }
+}
+
 // ── Render performance ───────────────────────────────────────
+
+let amazonStats = JSON.parse(localStorage.getItem('amazonStats') || '{}');
+
+async function handleCSVUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  toast('Parsing Amazon CSV...');
+  const text = await file.text();
+  
+  const lines = text.split('\n').filter(l => l.trim().length > 0);
+  if (lines.length < 2) return toast('Invalid CSV');
+  
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+  const asinIndex = headers.findIndex(h => h.includes('asin') || h.includes('item'));
+  const earningsIndex = headers.findIndex(h => h.includes('earnings') || h.includes('revenue') || h.includes('bounty') || h.includes('income'));
+  
+  if (asinIndex === -1) return toast('Error: No ASIN column found in CSV');
+  
+  let matchCount = 0;
+  let totalEarnings = 0;
+  
+  for (let i = 1; i < lines.length; i++) {
+    const rowStr = lines[i];
+    let inQuote = false;
+    let currentVal = '';
+    const cols = [];
+    for(let char of rowStr) {
+      if(char === '"') { inQuote = !inQuote; }
+      else if(char === ',' && !inQuote) { cols.push(currentVal); currentVal = ''; }
+      else { currentVal += char; }
+    }
+    cols.push(currentVal);
+    
+    if (cols.length <= asinIndex) continue;
+    const asin = cols[asinIndex].trim();
+    if (!asin) continue;
+    
+    const earnings = earningsIndex !== -1 ? parseFloat(cols[earningsIndex].replace(/[^0-9.-]+/g,"")) : 0;
+    
+    if (!isNaN(earnings) && earnings > 0) {
+       amazonStats[asin] = (amazonStats[asin] || 0) + earnings;
+       totalEarnings += earnings;
+    }
+    
+    if (Object.values(products).some(p => p.asin === asin)) {
+      matchCount++;
+    }
+  }
+  
+  localStorage.setItem('amazonStats', JSON.stringify(amazonStats));
+  toast(`CSV Processed! Synced £${totalEarnings.toFixed(2)} new earnings.`);
+  
+  if (currentSection === 'performance') renderPerformance();
+  e.target.value = ''; // Reset input
+}
+
+function getHookType(title) {
+  if (!title) return 'Statement';
+  const lower = title.toLowerCase();
+  if (title.includes('?')) return 'Question';
+  if (lower.includes('£') || lower.includes('$')) return 'Price/Deal';
+  if (lower.includes('i ') || lower.includes("i've") || lower.includes('my ')) return 'First Person';
+  if (lower.includes('you ') || lower.includes('your ')) return 'Direct Address';
+  return 'Statement';
+}
 
 function renderPerformance() {
   const content = document.getElementById('performance-content');
@@ -1454,13 +1793,31 @@ function renderPerformance() {
 
   // 2. Templates Grouping
   const tplStats = {};
+  const hookStats = {};
+  const prodStats = {};
+
   postedPins.forEach(p => {
+    // Template tracking
     const tpl = p.template_style || 'Unknown';
     if (!tplStats[tpl]) tplStats[tpl] = { count: 0, imps: 0, clicks: 0, saves: 0 };
     tplStats[tpl].count++;
     tplStats[tpl].imps += (p.impressions || 0);
     tplStats[tpl].clicks += (p.clicks || 0);
     tplStats[tpl].saves += (p.saves || 0);
+    
+    // Hook Type tracking
+    const hook = getHookType(p.title);
+    if (!hookStats[hook]) hookStats[hook] = { count: 0, imps: 0, clicks: 0 };
+    hookStats[hook].count++;
+    hookStats[hook].imps += (p.impressions || 0);
+    hookStats[hook].clicks += (p.clicks || 0);
+    
+    // Product Opportunity tracking
+    if (p.product_id) {
+      if (!prodStats[p.product_id]) prodStats[p.product_id] = { id: p.product_id, imps: 0, clicks: 0 };
+      prodStats[p.product_id].imps += (p.impressions || 0);
+      prodStats[p.product_id].clicks += (p.clicks || 0);
+    }
   });
   
   const templatesHtml = Object.entries(tplStats)
@@ -1470,6 +1827,21 @@ function renderPerformance() {
       return `
         <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
           <span style="font-family:'DM Mono',monospace; font-size:12px; font-weight:600;">${esc(tpl)}</span>
+          <div style="display:flex; gap:20px; font-size:12px; font-family:'DM Mono',monospace;">
+            <span style="width:60px; text-align:right;" title="Pins"><span style="color:var(--faint)">Pins:</span> ${s.count}</span>
+            <span style="width:70px; text-align:right;" title="Clicks"><span style="color:var(--faint)">C:</span> ${s.clicks}</span>
+            <span style="width:60px; text-align:right; color:var(--blue);" title="CTR">${ctr}%</span>
+          </div>
+        </div>`;
+    }).join('');
+
+  const hooksHtml = Object.entries(hookStats)
+    .sort((a, b) => b[1].clicks - a[1].clicks)
+    .map(([hook, s]) => {
+      const ctr = s.imps > 0 ? ((s.clicks / s.imps) * 100).toFixed(2) : '0.00';
+      return `
+        <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
+          <span style="font-family:'DM Mono',monospace; font-size:12px; font-weight:600;">${esc(hook)}</span>
           <div style="display:flex; gap:20px; font-size:12px; font-family:'DM Mono',monospace;">
             <span style="width:60px; text-align:right;" title="Pins"><span style="color:var(--faint)">Pins:</span> ${s.count}</span>
             <span style="width:70px; text-align:right;" title="Clicks"><span style="color:var(--faint)">C:</span> ${s.clicks}</span>
@@ -1498,9 +1870,30 @@ function renderPerformance() {
     </div>
   `).join('');
 
+  // 4. Opportunity Gap
+  const oppProducts = Object.values(prodStats).filter(p => {
+    const ctr = p.imps > 0 ? (p.clicks / p.imps) * 100 : 0;
+    return p.imps >= 50 && ctr < 0.5;
+  }).sort((a, b) => b.imps - a.imps).slice(0, 5);
+  
+  const oppHtml = oppProducts.length ? oppProducts.map((p) => {
+    const prodInfo = products[p.id] ? products[p.id].name : `Product #${p.id}`;
+    const ctr = ((p.clicks / p.imps) * 100).toFixed(2);
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);">
+        <div style="flex:1;">
+          <div style="font-size:13px; font-weight:500;">${esc(prodInfo.substring(0, 60))}...</div>
+          <div style="font-size:11px; font-family:'DM Mono',monospace; color:var(--faint); margin-top:4px;">${p.imps.toLocaleString()} imps / ${p.clicks} clicks</div>
+        </div>
+        <span class="badge badge-pending" style="margin-left:12px;">CTR ${ctr}%</span>
+      </div>`;
+  }).join('') : '<div style="font-size:13px; color:var(--faint); padding:10px 0;">No opportunity gap products found right now.</div>';
+
+  const totalAmazonEarnings = Object.keys(amazonStats).reduce((sum, asin) => sum + amazonStats[asin], 0);
+
   content.innerHTML = `
     <!-- Stats Grid -->
-    <div class="stats" style="margin-bottom: 30px;">
+    <div class="stats" style="margin-bottom: 30px; grid-template-columns: repeat(5, 1fr);">
       <div class="stat">
         <div class="stat-label">Total Impressions</div>
         <div class="stat-val">${totalImps.toLocaleString()}</div>
@@ -1517,6 +1910,11 @@ function renderPerformance() {
         <div class="stat-label">Total Saves</div>
         <div class="stat-val" style="color:var(--green);">${totalSaves.toLocaleString()}</div>
       </div>
+      <div class="stat">
+        <div class="stat-label">Total Earnings</div>
+        <div class="stat-val" style="color:var(--green);">£${totalAmazonEarnings.toFixed(2)}</div>
+        <div style="font-size:10px; color:var(--muted); margin-top:4px;">Via CSV sync</div>
+      </div>
     </div>
 
     <!-- Breakdown Grid -->
@@ -1527,10 +1925,23 @@ function renderPerformance() {
         ${templatesHtml}
       </div>
 
+      <!-- Hook Types -->
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px;">
+        <h3 style="font-size:15px; font-weight:600; margin-bottom:16px;">Hook Type A/B Test</h3>
+        ${hooksHtml}
+      </div>
+
       <!-- Leaderboard -->
       <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px;">
         <h3 style="font-size:15px; font-weight:600; margin-bottom:16px;">Top 5 Pins</h3>
         ${topPinsHtml}
+      </div>
+      
+      <!-- Opportunities -->
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px;">
+        <h3 style="font-size:15px; font-weight:600; margin-bottom:16px;">Opportunity Gap</h3>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:16px;">High impressions (>50), low CTR (<0.5%). Consider repinning these with a fresh angle.</p>
+        ${oppHtml}
       </div>
     </div>
   `;

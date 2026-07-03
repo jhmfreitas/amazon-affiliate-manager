@@ -65,6 +65,92 @@ NICHES = [
     {"name": "crossbody bags women",       "category": "fashion",   "audience": "women looking for everyday and going-out bags"},
 ]
 
+# ── Seasonal niches (auto-rotate by month) ───────────────────
+# Pinterest users search 2-4 weeks ahead of the season, so we
+# target the CURRENT season plus early-next-season queries.
+
+SEASONAL_NICHES = {
+    # Spring (March-May): Easter, spring refresh, transitional fashion
+    3: [
+        {"name": "spring outfits women",       "category": "clothing",  "audience": "women refreshing their wardrobe for spring"},
+        {"name": "easter dress women",         "category": "clothing",  "audience": "women looking for Easter Sunday outfits"},
+        {"name": "pastel jewellery",           "category": "jewellery", "audience": "women who love pastel and spring-toned accessories"},
+    ],
+    4: [
+        {"name": "spring wedding guest dress", "category": "clothing",  "audience": "women attending spring weddings"},
+        {"name": "lightweight jackets women",  "category": "clothing",  "audience": "women looking for transitional spring layers"},
+        {"name": "floral dresses women",       "category": "clothing",  "audience": "women who love floral prints for spring"},
+    ],
+    5: [
+        {"name": "summer wedding guest outfit","category": "clothing",  "audience": "women attending summer weddings"},
+        {"name": "holiday outfits women",      "category": "clothing",  "audience": "women packing for summer holidays"},
+        {"name": "straw bags women",           "category": "fashion",   "audience": "women looking for summer and beach bags"},
+    ],
+    
+    # Summer (June-August): Holidays, festivals, beach, weddings
+    6: [
+        {"name": "holiday dresses women",      "category": "clothing",  "audience": "women shopping for holiday and vacation dresses"},
+        {"name": "festival outfits women",     "category": "clothing",  "audience": "women looking for festival and outdoor event fashion"},
+        {"name": "beach accessories women",    "category": "fashion",   "audience": "women looking for beach bags, hats, and sandals"},
+        {"name": "summer sandals women",       "category": "shoes",     "audience": "women looking for stylish summer sandals"},
+    ],
+    7: [
+        {"name": "vacation outfits women",     "category": "clothing",  "audience": "women packing stylish holiday wardrobes"},
+        {"name": "summer wedding guest dress", "category": "clothing",  "audience": "women attending summer weddings"},
+        {"name": "linen clothing women",       "category": "clothing",  "audience": "women looking for breathable summer fabrics"},
+        {"name": "statement earrings summer",  "category": "jewellery", "audience": "women who love bold summer jewellery"},
+    ],
+    8: [
+        {"name": "back to work outfits women", "category": "clothing",  "audience": "women refreshing their work wardrobe after summer"},
+        {"name": "transitional outfits autumn","category": "clothing",  "audience": "women planning autumn wardrobe staples"},
+        {"name": "ankle boots women",          "category": "shoes",     "audience": "women looking for early autumn boots"},
+    ],
+    
+    # Autumn (September-November): Back to school, layering, Halloween, cosy
+    9: [
+        {"name": "autumn outfits women",       "category": "clothing",  "audience": "women looking for cosy autumn fashion"},
+        {"name": "knit jumpers women",         "category": "clothing",  "audience": "women looking for stylish knitwear"},
+        {"name": "chunky gold jewellery",      "category": "jewellery", "audience": "women who love bold autumn accessories"},
+    ],
+    10: [
+        {"name": "winter coat women",          "category": "clothing",  "audience": "women shopping for winter coats early"},
+        {"name": "knee high boots women",      "category": "shoes",     "audience": "women looking for statement autumn boots"},
+        {"name": "cosy loungewear women",      "category": "clothing",  "audience": "women looking for comfortable stay-at-home outfits"},
+    ],
+    11: [
+        {"name": "christmas party dress",      "category": "clothing",  "audience": "women looking for festive party outfits"},
+        {"name": "gift ideas for her",         "category": "jewellery", "audience": "people shopping for women's Christmas gifts"},
+        {"name": "winter accessories women",   "category": "fashion",   "audience": "women looking for scarves, gloves, and hats"},
+    ],
+    
+    # Winter (December-February): Christmas, NYE, January sales, Valentine's
+    12: [
+        {"name": "new year's eve outfit women","category": "clothing",  "audience": "women looking for NYE party outfits"},
+        {"name": "christmas jumper women",     "category": "clothing",  "audience": "women looking for festive Christmas knitwear"},
+        {"name": "sparkly jewellery women",    "category": "jewellery", "audience": "women looking for statement party jewellery"},
+    ],
+    1: [
+        {"name": "january sales fashion women","category": "clothing",  "audience": "women looking for fashion deals in the January sales"},
+        {"name": "capsule wardrobe women",     "category": "clothing",  "audience": "women planning a minimal wardrobe refresh"},
+        {"name": "dainty necklaces women",     "category": "jewellery", "audience": "women who love minimalist everyday jewellery"},
+    ],
+    2: [
+        {"name": "valentine's day outfit",     "category": "clothing",  "audience": "women looking for date night outfits"},
+        {"name": "red dress women",            "category": "clothing",  "audience": "women looking for red and romantic dresses"},
+        {"name": "heart jewellery women",      "category": "jewellery", "audience": "women looking for Valentine's Day gifts and accessories"},
+    ],
+}
+
+
+def get_active_niches():
+    """Combine evergreen niches with seasonal ones for the current month."""
+    current_month = datetime.now().month
+    seasonal = SEASONAL_NICHES.get(current_month, [])
+    
+    all_niches = NICHES + seasonal
+    log.info(f"Active niches: {len(NICHES)} evergreen + {len(seasonal)} seasonal = {len(all_niches)} total")
+    return all_niches
+
 # ── 1. PINTEREST DEMAND (UK + US) ──────────────────────────
 
 def get_pinterest_trends(query, region="GB"):
@@ -304,7 +390,7 @@ if __name__ == "__main__":
     # request this run — see make_amazon_session() for why this matters.
     amazon_session = make_amazon_session()
 
-    for niche in NICHES:
+    for niche in get_active_niches():
         print(f"\nNICHE: {niche['name'].upper()}")
 
         # Step 1: Find Demand

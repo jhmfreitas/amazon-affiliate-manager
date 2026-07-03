@@ -3,10 +3,11 @@ import re
 import sys
 import time
 import json
+import math
 import requests
 import random
 from datetime import datetime, timezone
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
 from config import (
     SUPABASE_URL, SUPABASE_HEADERS, 
@@ -30,6 +31,30 @@ BOARD_MAP = {
     "jewellery":  "1128785162795287250",  # Jewellery Finds
 }
 DEFAULT_BOARD = "1128785162795137672"  # Fashion Finds Under £50
+
+# ── Font paths (Google Fonts bundled in repo) ────────────────
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT  = os.path.dirname(SCRIPT_DIR)
+FONTS_DIR  = os.path.join(REPO_ROOT, "assets", "fonts")
+
+# ── Color palette — warm, editorial, premium ─────────────────
+COLORS = {
+    "bg_cream":       (250, 247, 243),    # Warm cream background
+    "bg_white":       (255, 255, 255),    # Pure white
+    "text_dark":      (35, 30, 28),       # Near-black, warm
+    "text_mid":       (95, 85, 78),       # Medium brown-grey
+    "text_light":     (140, 130, 122),    # Light for subtle text
+    "accent_coral":   (232, 113, 91),     # Warm coral for badges
+    "accent_sage":    (139, 168, 140),    # Sage green accent
+    "accent_gold":    (196, 164, 110),    # Gold for premium feel
+    "badge_bg":       (35, 30, 28),       # Dark badge background
+    "badge_text":     (255, 255, 255),    # White badge text
+    "cta_bg":         (35, 30, 28),       # CTA strip background
+    "cta_text":       (255, 255, 255),    # CTA text
+    "divider":        (225, 218, 210),    # Subtle divider line
+    "shadow":         (0, 0, 0, 25),      # Very subtle shadow
+}
+
 
 # ── 1. Rotation Candidates ────────────────────────────────────
 
@@ -68,7 +93,44 @@ def get_affiliate_url(asin, fallback_url=None):
     """Simple passthrough for now, can be expanded to PA-API."""
     return fallback_url or f"https://www.amazon.co.uk/dp/{asin}?tag=pinnpurchas0f-21"
 
-# ── 3. Image Handling ─────────────────────────────────────────
+# ── 3. Font Loading ──────────────────────────────────────────
+
+def load_font(name, size):
+    """Load a bundled Google Font, with system font fallback."""
+    font_files = {
+        "title":    "Poppins-Bold.ttf",
+        "subtitle": "Poppins-SemiBold.ttf",
+        "body":     "Poppins-Medium.ttf",
+        "badge":    "Poppins-Bold.ttf",
+        "cta":      "Poppins-SemiBold.ttf",
+    }
+    
+    filename = font_files.get(name, "Poppins-Medium.ttf")
+    font_path = os.path.join(FONTS_DIR, filename)
+    
+    if os.path.exists(font_path):
+        try:
+            return ImageFont.truetype(font_path, size)
+        except IOError:
+            pass
+    
+    # Fallback to system fonts
+    fallbacks = [
+        "C:/Windows/Fonts/segoeuib.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+    ]
+    for path in fallbacks:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except IOError:
+                pass
+    return ImageFont.load_default()
+
+
+# ── 4. Image Helpers ─────────────────────────────────────────
 
 def get_pexels_image(query):
     url = "https://api.pexels.com/v1/search"
@@ -82,7 +144,9 @@ def get_pexels_image(query):
     except: pass
     return None, None
 
+
 def wrap_text(text, font, max_width):
+    """Word-wrap text to fit within max_width pixels."""
     lines = []
     words = text.split()
     current_line = ""
@@ -99,114 +163,213 @@ def wrap_text(text, font, max_width):
         lines.append(current_line)
     return lines
 
-def get_font(size):
-    # Try common system bold fonts
-    font_paths = [
-        "C:/Windows/Fonts/segoeuib.ttf",
-        "C:/Windows/Fonts/arialbd.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/Library/Fonts/Arial Bold.ttf"
-    ]
-    
-    for path in font_paths:
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size)
-            except IOError:
-                pass
-                
-    return ImageFont.load_default()
 
-def create_pin_image(template_style, bg_url, product_url, title):
-    # Download images
-    bg_resp = requests.get(bg_url)
-    pr_resp = requests.get(product_url)
+def get_text_height(text, font):
+    """Get the height of a single line of text."""
+    bbox = font.getbbox(text) if hasattr(font, 'getbbox') else None
+    if bbox:
+        return bbox[3] - bbox[1]
+    return font.getsize(text)[1] if hasattr(font, 'getsize') else 30
+
+
+def draw_rounded_rect(draw, xy, radius, fill):
+    """Draw a rounded rectangle."""
+    x0, y0, x1, y1 = xy
+    # Clamp radius to half the smallest dimension
+    max_radius = min((x1 - x0) // 2, (y1 - y0) // 2)
+    r = min(radius, max_radius)
     
-    bg = Image.open(BytesIO(bg_resp.content)).convert("RGBA")
+    # Main rectangle
+    draw.rectangle([(x0 + r, y0), (x1 - r, y1)], fill=fill)
+    draw.rectangle([(x0, y0 + r), (x1, y1 - r)], fill=fill)
+    # Four corner circles
+    draw.ellipse([(x0, y0), (x0 + 2*r, y0 + 2*r)], fill=fill)
+    draw.ellipse([(x1 - 2*r, y0), (x1, y0 + 2*r)], fill=fill)
+    draw.ellipse([(x0, y1 - 2*r), (x0 + 2*r, y1)], fill=fill)
+    draw.ellipse([(x1 - 2*r, y1 - 2*r), (x1, y1)], fill=fill)
+
+
+def add_product_shadow(canvas, product_img, x, y):
+    """Add a soft drop shadow behind the product image."""
+    shadow_offset = 12
+    shadow_blur = 20
+    
+    # Create shadow layer
+    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    
+    # Draw shadow rectangle slightly larger and offset
+    shadow_draw.rounded_rectangle(
+        [(x + shadow_offset, y + shadow_offset), 
+         (x + product_img.width + shadow_offset, y + product_img.height + shadow_offset)],
+        radius=16,
+        fill=(0, 0, 0, 35)
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(shadow_blur))
+    canvas = Image.alpha_composite(canvas, shadow)
+    return canvas
+
+
+# ── 5. Product Hero Template ─────────────────────────────────
+
+def create_pin_image(template_style, bg_url, product_url, title, price=None):
+    """
+    Creates a premium "Product Hero" pin image (1000x1500).
+    
+    Layout:
+    ┌──────────────────────┐
+    │   TITLE (2 lines)    │  ← Bold Poppins, warm dark
+    │   ─── divider ───    │
+    │                      │
+    │    ┌────────────┐    │
+    │    │  PRODUCT   │    │  ← Large, centered, with shadow
+    │    │   IMAGE    │    │
+    │    └────────────┘    │
+    │                      │
+    │  [£XX.XX]            │  ← Price badge (if available)
+    │                      │
+    │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │  ← CTA strip "Shop Now on Amazon"
+    └──────────────────────┘
+    """
+    # Download product image
+    pr_resp = requests.get(product_url, timeout=15)
     pr = Image.open(BytesIO(pr_resp.content)).convert("RGBA")
     
-    # Ensure background is 1000x1500
-    bg = bg.resize((1000, 1500), Image.Resampling.LANCZOS)
-    canvas = Image.new("RGBA", (1000, 1500), (255, 255, 255, 255))
+    # Canvas: 1000x1500, warm cream background
+    W, H = 1000, 1500
+    canvas = Image.new("RGBA", (W, H), COLORS["bg_cream"])
     draw = ImageDraw.Draw(canvas)
     
-    title_font = get_font(70)
+    # ── Fonts ────────────────────────────────────────────────
+    title_font   = load_font("title", 56)
+    badge_font   = load_font("badge", 32)
+    cta_font     = load_font("cta", 28)
     
-    if template_style == "lifestyle_overlay":
-        # Full background
-        canvas.paste(bg, (0,0))
-        # Dark gradient overlay at top
-        overlay = Image.new('RGBA', (1000, 1500), (0,0,0,0))
-        ImageDraw.Draw(overlay).rectangle([(0,0), (1000, 450)], fill=(0,0,0,160))
-        canvas = Image.alpha_composite(canvas, overlay)
-        draw = ImageDraw.Draw(canvas)
-        
-        # Text at top
-        lines = wrap_text(title, title_font, 900)
-        y_text = 60
-        for line in lines:
-            w = title_font.getlength(line) if hasattr(title_font, 'getlength') else title_font.getsize(line)[0]
-            draw.text(((1000-w)/2, y_text), line, font=title_font, fill="white")
-            y_text += 85
-            
-        # Product image centered/bottom
-        pr.thumbnail((700, 700), Image.Resampling.LANCZOS)
-        # Simple shadow
-        shadow = Image.new("RGBA", pr.size, (0,0,0,0))
-        ImageDraw.Draw(shadow).ellipse([(0,0), pr.size], fill=(0,0,0,60))
-        
-        pr_x = (1000 - pr.size[0]) // 2
-        pr_y = (1500 - pr.size[1]) // 2 + 100
-        canvas.paste(shadow, (pr_x + 15, pr_y + 15), shadow)
-        
-        # Circular mask for product (optional but good for lifestyle)
-        mask = Image.new("L", pr.size, 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, pr.size[0], pr.size[1]), fill=255)
-        canvas.paste(pr, (pr_x, pr_y), mask)
-        
-    elif template_style == "split_screen":
-        # Top half background
-        bg_top = bg.crop((0, 0, 1000, 750))
-        canvas.paste(bg_top, (0,0))
-        
-        # Bottom half white
-        draw.rectangle([(0, 750), (1000, 1500)], fill=(255,255,255,255))
-        
-        # Text in middle
-        lines = wrap_text(title, title_font, 900)
-        y_text = 800
-        for line in lines:
-            w = title_font.getlength(line) if hasattr(title_font, 'getlength') else title_font.getsize(line)[0]
-            draw.text(((1000-w)/2, y_text), line, font=title_font, fill=(30,30,30,255))
-            y_text += 85
-            
-        # Product at bottom
-        pr.thumbnail((500, 500), Image.Resampling.LANCZOS)
-        pr_x = (1000 - pr.size[0]) // 2
-        pr_y = y_text + 40
-        canvas.paste(pr, (pr_x, pr_y), pr)
-        
-    else: # minimalist
-        # Soft color background
-        draw.rectangle([(0,0), (1000, 1500)], fill=(245, 240, 235, 255))
-        
-        # Title text
-        lines = wrap_text(title, title_font, 850)
-        y_text = 120
-        for line in lines:
-            w = title_font.getlength(line) if hasattr(title_font, 'getlength') else title_font.getsize(line)[0]
-            draw.text(((1000-w)/2, y_text), line, font=title_font, fill=(40,40,40,255))
-            y_text += 85
-            
-        # Large product image
-        pr.thumbnail((850, 850), Image.Resampling.LANCZOS)
-        pr_x = (1000 - pr.size[0]) // 2
-        pr_y = y_text + 80
-        canvas.paste(pr, (pr_x, pr_y), pr)
+    # ── Layout constants ─────────────────────────────────────
+    MARGIN       = 70
+    TITLE_Y      = 100
+    TITLE_MAX_W  = W - (MARGIN * 2)
+    CTA_HEIGHT   = 90
+    CTA_Y        = H - CTA_HEIGHT
+    PRODUCT_AREA_TOP    = 340
+    PRODUCT_AREA_BOTTOM = CTA_Y - 40
 
+    # ── 1. Decorative top accent line ────────────────────────
+    accent_color = random.choice([
+        COLORS["accent_coral"],
+        COLORS["accent_sage"],
+        COLORS["accent_gold"],
+    ])
+    draw.rectangle([(0, 0), (W, 6)], fill=accent_color)
+    
+    # ── 2. Title ─────────────────────────────────────────────
+    lines = wrap_text(title.upper(), title_font, TITLE_MAX_W)
+    lines = lines[:3]  # Max 3 lines
+    
+    line_height = get_text_height("A", title_font) + 14
+    total_text_height = len(lines) * line_height
+    
+    y = TITLE_Y
+    for line in lines:
+        w = title_font.getlength(line) if hasattr(title_font, 'getlength') else title_font.getsize(line)[0]
+        draw.text(((W - w) / 2, y), line, font=title_font, fill=COLORS["text_dark"])
+        y += line_height
+    
+    # ── 3. Divider line ──────────────────────────────────────
+    divider_y = y + 20
+    div_w = 120
+    draw.rectangle(
+        [((W - div_w) // 2, divider_y), ((W + div_w) // 2, divider_y + 3)],
+        fill=accent_color
+    )
+    
+    # ── 4. Product image ─────────────────────────────────────
+    # Calculate available space for product
+    product_area_top = divider_y + 40
+    product_area_h = PRODUCT_AREA_BOTTOM - product_area_top
+    
+    # Reserve space for price badge if we have a price
+    if price and price > 0:
+        product_area_h -= 70  # Space for badge below product
+    
+    max_product_w = W - (MARGIN * 2) - 40  # Some breathing room
+    max_product_h = min(product_area_h, 700)  # Cap at 700px
+    
+    # Scale product image to fit
+    pr.thumbnail((max_product_w, max_product_h), Image.Resampling.LANCZOS)
+    
+    # Center the product image
+    pr_x = (W - pr.width) // 2
+    pr_y = product_area_top + (product_area_h - pr.height) // 2
+    
+    if price and price > 0:
+        pr_y -= 30  # Shift up slightly to make room for badge
+    
+    # Add soft shadow behind product
+    canvas = add_product_shadow(canvas, pr, pr_x, pr_y)
+    draw = ImageDraw.Draw(canvas)  # Refresh draw after composite
+    
+    # White card behind product for clean look
+    card_padding = 20
+    draw_rounded_rect(draw,
+        (pr_x - card_padding, pr_y - card_padding, 
+         pr_x + pr.width + card_padding, pr_y + pr.height + card_padding),
+        radius=16,
+        fill=COLORS["bg_white"]
+    )
+    
+    # Paste product image
+    canvas.paste(pr, (pr_x, pr_y), pr if pr.mode == "RGBA" else None)
+    
+    # ── 5. Price badge ───────────────────────────────────────
+    if price and price > 0:
+        # Format price
+        if price == int(price):
+            price_text = f"£{int(price)}"
+        else:
+            price_text = f"£{price:.2f}"
+        
+        # Badge dimensions
+        badge_padding_x = 28
+        badge_padding_y = 14
+        badge_w = badge_font.getlength(price_text) + badge_padding_x * 2
+        badge_h = get_text_height(price_text, badge_font) + badge_padding_y * 2
+        
+        badge_x = (W - badge_w) / 2
+        badge_y = pr_y + pr.height + card_padding + 24
+        
+        # Draw badge
+        draw_rounded_rect(draw,
+            (int(badge_x), int(badge_y), int(badge_x + badge_w), int(badge_y + badge_h)),
+            radius=int(badge_h // 2),
+            fill=COLORS["badge_bg"]
+        )
+        
+        # Badge text
+        text_w = badge_font.getlength(price_text)
+        draw.text(
+            ((W - text_w) / 2, badge_y + badge_padding_y - 2),
+            price_text,
+            font=badge_font,
+            fill=COLORS["badge_text"]
+        )
+    
+    # ── 6. CTA strip at bottom ───────────────────────────────
+    draw.rectangle([(0, CTA_Y), (W, H)], fill=COLORS["cta_bg"])
+    
+    cta_text = "SHOP NOW ON AMAZON →"
+    cta_w = cta_font.getlength(cta_text)
+    cta_text_y = CTA_Y + (CTA_HEIGHT - get_text_height(cta_text, cta_font)) // 2
+    draw.text(((W - cta_w) / 2, cta_text_y), cta_text, font=cta_font, fill=COLORS["cta_text"])
+    
+    # ── 7. Bottom accent line ────────────────────────────────
+    draw.rectangle([(0, H - 4), (W, H)], fill=accent_color)
+    
+    # ── Export ────────────────────────────────────────────────
     out = BytesIO()
-    canvas.convert("RGB").save(out, "JPEG", quality=90)
+    canvas.convert("RGB").save(out, "JPEG", quality=92)
     return out.getvalue()
+
 
 def upload_image(image_bytes):
     # Use binary headers for storage, not JSON headers
@@ -224,26 +387,56 @@ def upload_image(image_bytes):
         resp.raise_for_status()
     return f"{SUPABASE_URL}/storage/v1/object/public/pin-images/{filename}"
 
-# ── 4. Gemini Content Generation ─────────────────────────────
+# ── 6. Gemini Content Generation ─────────────────────────────
 
 def generate_candidates(product, count, keywords):
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    prompt = f"""
-    Create {count} Pinterest Pin ideas for: {product['name']}
-    Category: {product.get('category', 'Home')}
-    Keywords: {keywords}
     
-    STRICT RULES:
-    1. Title: Create a compelling, benefit-driven hook (e.g. "This £25 fan saved my summer", "The desk accessory I can't live without"). Under 60 characters.
-    2. Description: 200-400 characters total. Use natural keywords.
-    3. NO HASHTAGS (e.g., #HomeDecor). Use flowing sentences instead.
+    category = product.get('category', 'Fashion')
+    price = product.get('price', 0)
+    price_str = f"£{price:.0f}" if price else "affordable"
     
-    Format: JSON list of objects with 'title', 'description', 'alt_text', 'keywords', 'pexels_search'.
-    'keywords' should be a list of 5-8 short search phrases (no hashtags).
-    """
+    prompt = f"""Create {count} high-converting Pinterest pin ideas for this Amazon UK product.
+
+PRODUCT: {product['name']}
+CATEGORY: {category}
+PRICE: {price_str}
+KEYWORDS: {keywords}
+
+RULES FOR TITLE (most important — this is what stops the scroll):
+1. Write a HOOK that creates curiosity or shows a benefit
+2. Use first-person or second-person voice ("I found...", "You need this...")
+3. Include the price if it's a good deal (e.g. "This £25 dress looks designer")
+4. Under 60 characters MAXIMUM
+5. Examples of great titles:
+   - "This £18 bag gets compliments every time"
+   - "The summer dress I packed for 3 holidays"
+   - "Found the perfect everyday necklace under £20"
+
+RULES FOR DESCRIPTION (Pinterest SEO — this determines search ranking):
+1. First sentence MUST contain the primary keyword phrase naturally
+2. 200-400 characters total
+3. Include 2-3 benefit statements (comfortable, versatile, great quality)
+4. End with a soft CTA: "Tap the link to shop" or "Find it on Amazon"
+5. NO hashtags — Pinterest penalises them
+6. Write in natural, conversational UK English
+
+RULES FOR ALT TEXT:
+1. Describe what the product LOOKS like visually
+2. 100-150 characters
+3. Include colour, material, style
+
+Return ONLY a JSON list of objects with these fields:
+- 'title': the scroll-stopping hook
+- 'description': Pinterest-SEO optimized description
+- 'alt_text': visual description for accessibility
+- 'keywords': list of 5-8 Pinterest search phrases (no hashtags)
+- 'pexels_search': a 2-3 word search term for finding a lifestyle background image
+"""
+    
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.7}
+        "generationConfig": {"temperature": 0.8}
     }
     for attempt in range(3):
         try:
@@ -279,23 +472,48 @@ def generate_candidates(product, count, keywords):
             else:
                 return []
 
+
 def score_candidates(candidates, product):
-    # Score candidates based on title length and keyword presence
+    """Score candidates — prioritize hooks that create curiosity."""
     for c in candidates:
-        score = 80
+        score = 75
+        title = c.get('title', '')
+        desc = c.get('description', '')
+        
         # Title hook quality
-        if len(c['title']) < 60 and len(c['title']) > 20: score += 10
-        if "£" in c['title'] or "find" in c['title'].lower() or "must" in c['title'].lower(): score += 5
-        # Description length
-        if len(c['description']) >= 200: score += 5
+        title_len = len(title)
+        if 25 <= title_len <= 55:
+            score += 10  # Sweet spot length
+        elif title_len < 60:
+            score += 5
+            
+        # First-person / second-person hooks perform best on Pinterest
+        lower_title = title.lower()
+        if any(w in lower_title for w in ["i ", "i'", "my ", "you ", "your ", "this "]):
+            score += 8
+            
+        # Price mention in title (social proof)
+        if "£" in title:
+            score += 5
+            
+        # Description quality
+        if 200 <= len(desc) <= 400:
+            score += 5
+            
+        # Penalise hashtags (Pinterest penalises them)
+        if "#" in desc:
+            score -= 10
+            
         c['score'] = min(score, 100)
         
     candidates.sort(key=lambda x: x['score'], reverse=True)
     return candidates
 
+
 def get_board_for_product(product):
     cat = (product.get("category") or "").lower()
     return BOARD_MAP.get(cat, DEFAULT_BOARD)
+
 
 def save_pin(pin, product, affiliate_url, board_id, template_style):
     score = product.get("score") or 0
@@ -321,7 +539,7 @@ def save_pin(pin, product, affiliate_url, board_id, template_style):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(f"Pin Generation Carousel — {datetime.now(timezone.utc)}")
+    print(f"Pin Generation (Product Hero) — {datetime.now(timezone.utc)}")
     print("=" * 60)
 
     has_errors = False
@@ -345,11 +563,16 @@ if __name__ == "__main__":
                         has_errors = True
                         continue
                     
-                    # Rotate templates
-                    templates = ["lifestyle_overlay", "split_screen", "minimalist"]
-                    template_style = random.choice(templates)
+                    # Always use the Product Hero template now
+                    template_style = "product_hero"
                     
-                    img_bytes = create_pin_image(template_style, pexels_url, product.get('image_url', 'https://via.placeholder.com/800'), pin['title'])
+                    img_bytes = create_pin_image(
+                        template_style, 
+                        pexels_url, 
+                        product.get('image_url', 'https://via.placeholder.com/800'), 
+                        pin['title'],
+                        price=product.get('price')
+                    )
                     pin['image_url'] = upload_image(img_bytes)
                     
                     saved = save_pin(pin, product, affiliate_url, board_id, template_style)
