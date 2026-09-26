@@ -214,158 +214,100 @@ def add_product_shadow(canvas, product_img, x, y):
 
 def create_pin_image(template_style, bg_url, product_url, title, price=None):
     """
-    Creates a premium "Product Hero" pin image (1000x1500).
-    
-    Layout:
-    ┌──────────────────────┐
-    │   TITLE (2 lines)    │  ← Bold Poppins, warm dark
-    │   ─── divider ───    │
-    │                      │
-    │    ┌────────────┐    │
-    │    │  PRODUCT   │    │  ← Large, centered, with shadow
-    │    │   IMAGE    │    │
-    │    └────────────┘    │
-    │                      │
-    │  [£XX.XX]            │  ← Price badge (if available)
-    │                      │
-    │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │  ← CTA strip "Shop Now on Amazon"
-    └──────────────────────┘
+    Creates a single-product pin using the roundup grid's visual style.
     """
-    # Download product image
     pr_resp = requests.get(product_url, timeout=15)
     pr = Image.open(BytesIO(pr_resp.content)).convert("RGBA")
-    
-    # Canvas: 1000x1500, warm cream background
+
     W, H = 1000, 1500
     canvas = Image.new("RGBA", (W, H), COLORS["bg_cream"])
     draw = ImageDraw.Draw(canvas)
-    
-    # ── Fonts ────────────────────────────────────────────────
-    title_font   = load_font("title", 56)
-    badge_font   = load_font("badge", 32)
-    cta_font     = load_font("cta", 28)
-    
-    # ── Layout constants ─────────────────────────────────────
-    MARGIN       = 70
-    TITLE_Y      = 100
-    TITLE_MAX_W  = W - (MARGIN * 2)
-    CTA_HEIGHT   = 90
-    CTA_Y        = H - CTA_HEIGHT
-    PRODUCT_AREA_TOP    = 340
-    PRODUCT_AREA_BOTTOM = CTA_Y - 40
 
-    # ── 1. Decorative top accent line ────────────────────────
+    title_font = load_font("title", 50)
+    badge_font = load_font("badge", 26)
+    cta_font = load_font("cta", 28)
+    margin = 60
     accent_color = random.choice([
-        COLORS["accent_coral"],
-        COLORS["accent_sage"],
-        COLORS["accent_gold"],
+        COLORS["accent_coral"], COLORS["accent_sage"], COLORS["accent_gold"],
     ])
     draw.rectangle([(0, 0), (W, 6)], fill=accent_color)
-    
-    # ── 2. Title ─────────────────────────────────────────────
-    lines = wrap_text(title.upper(), title_font, TITLE_MAX_W)
-    lines = lines[:3]  # Max 3 lines
-    
-    line_height = get_text_height("A", title_font) + 14
-    total_text_height = len(lines) * line_height
-    
-    y = TITLE_Y
+
+    lines = wrap_text(title.upper(), title_font, W - margin * 2)[:3]
+    line_height = get_text_height("A", title_font) + 12
+    y = 90
     for line in lines:
-        w = title_font.getlength(line) if hasattr(title_font, 'getlength') else title_font.getsize(line)[0]
-        draw.text(((W - w) / 2, y), line, font=title_font, fill=COLORS["text_dark"])
+        text_width = title_font.getlength(line)
+        draw.text(((W - text_width) / 2, y), line, font=title_font, fill=COLORS["text_dark"])
         y += line_height
-    
-    # ── 3. Divider line ──────────────────────────────────────
-    divider_y = y + 20
+
+    divider_y = y + 16
     div_w = 120
     draw.rectangle(
         [((W - div_w) // 2, divider_y), ((W + div_w) // 2, divider_y + 3)],
         fill=accent_color
     )
-    
-    # ── 4. Product image ─────────────────────────────────────
-    # Calculate available space for product
-    product_area_top = divider_y + 40
-    product_area_h = PRODUCT_AREA_BOTTOM - product_area_top
-    
-    # Reserve space for price badge if we have a price
-    if price and price > 0:
-        product_area_h -= 70  # Space for badge below product
-    
-    max_product_w = W - (MARGIN * 2) - 40  # Some breathing room
-    max_product_h = min(product_area_h, 700)  # Cap at 700px
-    
-    # Scale product image to fit
-    pr.thumbnail((max_product_w, max_product_h), Image.Resampling.LANCZOS)
-    
-    # Center the product image
-    pr_x = (W - pr.width) // 2
-    pr_y = product_area_top + (product_area_h - pr.height) // 2
-    
-    if price and price > 0:
-        pr_y -= 30  # Shift up slightly to make room for badge
-    
-    # Add soft shadow behind product
-    canvas = add_product_shadow(canvas, pr, pr_x, pr_y)
-    draw = ImageDraw.Draw(canvas)  # Refresh draw after composite
-    
-    # White card behind product for clean look
-    card_padding = 20
-    draw_rounded_rect(draw,
-        (pr_x - card_padding, pr_y - card_padding, 
-         pr_x + pr.width + card_padding, pr_y + pr.height + card_padding),
-        radius=16,
+
+    cta_text = "Shop now on Amazon"
+    cta_pad_x, cta_pad_y = 34, 18
+    cta_width = cta_font.getlength(cta_text) + cta_pad_x * 2
+    cta_height = get_text_height(cta_text, cta_font) + cta_pad_y * 2
+    cta_x = (W - cta_width) / 2
+    cta_y = H - margin - cta_height
+
+    card_x = margin
+    card_y = divider_y + 30
+    card_width = W - margin * 2
+    card_height = cta_y - 20 - card_y
+    draw_rounded_rect(
+        draw,
+        (card_x, card_y, card_x + card_width, card_y + card_height),
+        radius=18,
         fill=COLORS["bg_white"]
     )
-    
-    # Paste product image
-    canvas.paste(pr, (pr_x, pr_y), pr if pr.mode == "RGBA" else None)
-    
-    # ── 5. Price badge ───────────────────────────────────────
+
+    price_reserve = 46 if price and price > 0 else 12
+    image_padding = 24
+    available_width = card_width - image_padding * 2
+    available_height = card_height - image_padding * 2 - price_reserve
+    pr.thumbnail((int(available_width), int(available_height)), Image.Resampling.LANCZOS)
+    pr_x = card_x + (card_width - pr.width) / 2
+    pr_y = card_y + image_padding + (available_height - pr.height) / 2
+    canvas.paste(pr, (int(pr_x), int(pr_y)), pr)
+
     if price and price > 0:
-        # Format price
-        if price == int(price):
-            price_text = f"£{int(price)}"
-        else:
-            price_text = f"£{price:.2f}"
-        
-        # Badge dimensions
-        badge_padding_x = 28
-        badge_padding_y = 14
-        badge_w = badge_font.getlength(price_text) + badge_padding_x * 2
-        badge_h = get_text_height(price_text, badge_font) + badge_padding_y * 2
-        
-        badge_x = (W - badge_w) / 2
-        badge_y = pr_y + pr.height + card_padding + 24
-        
-        # Draw badge
-        draw_rounded_rect(draw,
-            (int(badge_x), int(badge_y), int(badge_x + badge_w), int(badge_y + badge_h)),
-            radius=int(badge_h // 2),
+        price_text = f"£{int(price)}" if price == int(price) else f"£{price:.2f}"
+        text_width = badge_font.getlength(price_text)
+        text_height = get_text_height(price_text, badge_font)
+        badge_pad_x, badge_pad_y = 16, 8
+        badge_width = text_width + badge_pad_x * 2
+        badge_height = text_height + badge_pad_y * 2
+        badge_x = card_x + (card_width - badge_width) / 2
+        badge_y = card_y + card_height - badge_height - 12
+        draw_rounded_rect(
+            draw,
+            (int(badge_x), int(badge_y), int(badge_x + badge_width), int(badge_y + badge_height)),
+            radius=int(badge_height // 2),
             fill=COLORS["badge_bg"]
         )
-        
-        # Badge text
-        text_w = badge_font.getlength(price_text)
         draw.text(
-            ((W - text_w) / 2, badge_y + badge_padding_y - 2),
-            price_text,
-            font=badge_font,
-            fill=COLORS["badge_text"]
+            (badge_x + badge_pad_x, badge_y + badge_pad_y - 2),
+            price_text, font=badge_font, fill=COLORS["badge_text"]
         )
-    
-    # ── 6. CTA strip at bottom ───────────────────────────────
-    draw.rectangle([(0, CTA_Y), (W, H)], fill=COLORS["cta_bg"])
-    
-    cta_text = "SHOP NOW ON AMAZON →"
-    cta_w = cta_font.getlength(cta_text)
-    cta_text_y = CTA_Y + (CTA_HEIGHT - get_text_height(cta_text, cta_font)) // 2
-    draw.text(((W - cta_w) / 2, cta_text_y), cta_text, font=cta_font, fill=COLORS["cta_text"])
-    
-    # ── 7. Bottom accent line ────────────────────────────────
+
+    draw_rounded_rect(
+        draw,
+        (int(cta_x), int(cta_y), int(cta_x + cta_width), int(cta_y + cta_height)),
+        radius=int(cta_height // 2),
+        fill=COLORS["cta_bg"]
+    )
+    cta_text_width = cta_font.getlength(cta_text)
+    draw.text(
+        (cta_x + (cta_width - cta_text_width) / 2, cta_y + cta_pad_y - 2),
+        cta_text, font=cta_font, fill=COLORS["cta_text"]
+    )
+
     draw.rectangle([(0, H - 4), (W, H)], fill=accent_color)
-    
-    # ── Export ────────────────────────────────────────────────
+
     out = BytesIO()
     canvas.convert("RGB").save(out, "JPEG", quality=92)
     return out.getvalue()

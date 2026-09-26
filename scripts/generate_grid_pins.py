@@ -32,6 +32,7 @@ import json
 import time
 import math
 import random
+import re
 import requests
 from datetime import datetime, timezone
 from io import BytesIO
@@ -81,6 +82,9 @@ def get_theme_groups():
 
     by_category = {}
     for p in products:
+        targeting = f"{p.get('name', '')} {p.get('audience', '')}"
+        if not re.search(r"\b(women|woman|female|ladies)\b", targeting, re.IGNORECASE):
+            continue
         by_category.setdefault(p.get("category") or "misc", []).append(p)
 
     groups = []
@@ -108,7 +112,8 @@ def generate_grid_copy(category, products):
     prompt = f"""Create ONE high-converting Pinterest "roundup" pin idea covering these {len(products)} Amazon UK products together, as a themed collection — NOT a single product.
 
 CATEGORY: {category}
-AUDIENCE: {audience}
+TARGET AUDIENCE: Women. Keep the title, description, keywords, and visual concept relevant to women. Do not target men or a general audience.
+PRODUCT AUDIENCE CONTEXT: {audience}
 PRODUCTS: {"; ".join(names)}
 PRICE CAP: {f"under £{price_cap}" if price_cap else "not available"}
 

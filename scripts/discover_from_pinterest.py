@@ -36,6 +36,10 @@ BLOCK_MARKERS = [
     "Sorry, we just need to make sure",
     "Enter the characters you see below",
     "/errors/validateCaptcha",
+    "Robot Check",
+    "captcha",
+    "automated access to Amazon data",
+    "Sorry! Something went wrong",
 ]
 
 # Keyword noise filters — things that waste a request because they were
@@ -46,6 +50,8 @@ REJECT_KEYWORD_MARKERS = [
     "under 500", "under 1000", "under 2000",          # almost always ₹ price bands
     "prime video", "amazon prime", "tv show", "movie", # Prime Video drift
 ]
+FEMALE_TARGET_RE = re.compile(r"\b(?:women|woman|female|ladies|for her)\b", re.I)
+MALE_TARGET_RE = re.compile(r"\b(?:men|mens|men's|men’s|menswear|male|boys|boy's|boy’s)\b", re.I)
 
 NICHES = [
     # Clothing - specific sub-niches that match real Pinterest searches
@@ -185,7 +191,19 @@ def is_relevant_keyword(keyword):
     """Filter out keywords that were never going to return usable
     Amazon UK results (wrong region/currency, competitor sites, drift)."""
     k = keyword.lower()
-    return not any(marker in k for marker in REJECT_KEYWORD_MARKERS)
+    return (
+        not any(marker in k for marker in REJECT_KEYWORD_MARKERS)
+        and not MALE_TARGET_RE.search(k)
+    )
+
+
+def is_womens_targeted_product(product_name, niche):
+    """Accept products from women-focused niches unless the listing targets men."""
+    niche_targeting = f"{niche['name']} {niche['audience']}"
+    return bool(
+        FEMALE_TARGET_RE.search(niche_targeting)
+        and not MALE_TARGET_RE.search(product_name or "")
+    )
 
 
 def get_demand_keywords(niche):
@@ -212,6 +230,8 @@ def get_demand_keywords(niche):
     for k in unique:
         k_clean = k.lower().replace("pinterest", "").replace("ideas", "").replace("  ", " ").strip()
         if len(k_clean) > 5 and is_relevant_keyword(k_clean):
+            if not FEMALE_TARGET_RE.search(k_clean):
+                k_clean = f"{k_clean} women"
             clean.append(k_clean)
 
     rejected = len(unique) - len(clean)
@@ -248,7 +268,36 @@ def is_blocked_response(resp):
     if resp.status_code in (202, 429, 503):
         return True
     text = resp.text
-    return any(marker in text for marker in BLOCK_MARKERS)
+    if any(marker.lower() in text.lower() for marker in BLOCK_MARKERS):
+        return True
+
+    # A normal Amazon search page is substantially larger than this. Small
+    # HTTP 200 responses are usually an interstitial or bot-check page.
+    return resp.status_code == 200 and len(text) < 10000
+
+
+def extract_current_price(soup):
+    """Extract the live offer price, avoiding crossed-out RRP prices."""
+    selectors = [
+        "#corePriceDisplay_desktop_feature_div .priceToPay > .a-price:not(.a-text-price) .a-offscreen",
+        "#corePriceDisplay_desktop_feature_div .priceToPay > .a-price:not(.a-text-price)",
+        "#corePrice_desktop .priceToPay > .a-price:not(.a-text-price) .a-offscreen",
+        "#priceblock_dealprice",
+        "#priceblock_ourprice",
+        "#apex_desktop .priceToPay .a-offscreen",
+        "span.a-price:not(.a-text-price) .a-offscreen",
+    ]
+
+    for selector in selectors:
+        for price_tag in soup.select(selector):
+            if "a-text-price" in price_tag.get("class", []):
+                continue
+            price_text = price_tag.get_text(" ", strip=True)
+            match = re.search(r"£\s*([\d,]+(?:\.\d{1,2})?)", price_text)
+            if match:
+                return float(match.group(1).replace(",", ""))
+
+    return 0.0
 
 
 # ── 3. AMAZON DISCOVERY (SEARCH SCRAPER) ─────────────────────
@@ -334,11 +383,8 @@ def extract_product_details(asin, session):
             title_tag = soup.find(id="productTitle")
             if title_tag: product["name"] = title_tag.get_text(strip=True)[:150]
 
-            # 2. Price
-            price_span = soup.select_one(".a-price .a-offscreen") or soup.select_one(".a-price-whole")
-            if price_span:
-                price_text = re.sub(r"[^\d.]", "", price_span.get_text())
-                if price_text: product["price"] = float(price_text)
+            # 2. Price: use the current offer, not the crossed-out RRP.
+            product["price"] = extract_current_price(soup)
 
             # 3. Image (Resilient logic)
             img_tag = soup.find("img", id="landingImage") or soup.find("img", id="main-image")
@@ -409,7 +455,11 @@ if __name__ == "__main__":
                 print(f"    Extracting {asin}...", end=" ", flush=True)
                 p_data = extract_product_details(asin, amazon_session)
 
-                if p_data and p_data["price"] >= MIN_PRICE and p_data["image_url"]:
+                if not p_data or p_data["price"] < MIN_PRICE or not p_data["image_url"]:
+                    print("SKIPPED (Missing data or < £15)")
+                elif not is_womens_targeted_product(p_data["name"], niche):
+                    print("SKIPPED (not a women-targeted product)")
+                else:
                     # Build final product object
                     product = {
                         "asin":          asin,
@@ -436,9 +486,6 @@ if __name__ == "__main__":
                         print(f"✗ DB ERROR: {e}")
                         # Mark ASIN as 'existing' anyway so we don't spam errors for the same product
                         existing_asins.add(asin)
-                else:
-                    print("SKIPPED (Missing data or < £15)")
-
                 time.sleep(random.uniform(2, 4)) # Jitter between products
 
     print("\n" + "=" * 60)
