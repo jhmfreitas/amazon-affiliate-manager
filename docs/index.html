@@ -1073,7 +1073,7 @@
         <span class="nav-dot dot-approved"></span> Approved
         <span class="nav-count" id="nc-approved">0</span>
       </button>
-      <button class="nav-btn" onclick="setFilter('posted', this)">
+      <button class="nav-btn" id="nav-posted" onclick="setFilter('posted', this)">
         <span class="nav-dot dot-posted"></span> Posted
         <span class="nav-count" id="nc-posted">0</span>
       </button>
@@ -1809,7 +1809,7 @@
           .map(t => `<span class="tag">${esc(t)}</span>`).join('');
 
         return `
-    <div class="pin-card">
+    <div class="pin-card" id="pin-card-${pin.id}">
       <div class="pin-inner">
 
         <div class="img-panel">
@@ -2240,6 +2240,30 @@
     // ── Render performance ───────────────────────────────────────
 
     let amazonStats = JSON.parse(localStorage.getItem('amazonStats') || '{}');
+    let expandedOpportunityProductId = null;
+
+    function toggleOpportunityProduct(productId) {
+      expandedOpportunityProductId = expandedOpportunityProductId === productId ? null : productId;
+      renderPerformance();
+    }
+
+    function openOpportunityPin(pinId) {
+      setFilter('posted', document.getElementById('nav-posted'));
+      requestAnimationFrame(() => {
+        const pinCard = document.getElementById(`pin-card-${pinId}`);
+        if (!pinCard) {
+          toast('That posted pin was not found in the current list.');
+          return;
+        }
+        pinCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        pinCard.style.outline = '2px solid var(--accent)';
+        pinCard.style.outlineOffset = '3px';
+        setTimeout(() => {
+          pinCard.style.outline = '';
+          pinCard.style.outlineOffset = '';
+        }, 2200);
+      });
+    }
 
     async function handleCSVUpload(e) {
       const file = e.target.files[0];
@@ -2385,9 +2409,10 @@
 
         // Product Opportunity tracking
         if (p.product_id) {
-          if (!prodStats[p.product_id]) prodStats[p.product_id] = { id: p.product_id, imps: 0, clicks: 0 };
+          if (!prodStats[p.product_id]) prodStats[p.product_id] = { id: p.product_id, imps: 0, clicks: 0, pins: [] };
           prodStats[p.product_id].imps += (p.impressions || 0);
           prodStats[p.product_id].clicks += (p.clicks || 0);
+          prodStats[p.product_id].pins.push(p);
         }
       });
 
@@ -2450,13 +2475,38 @@
       const oppHtml = oppProducts.length ? oppProducts.map((p) => {
         const prodInfo = products[p.id] ? products[p.id].name : `Product #${p.id}`;
         const ctr = ((p.clicks / p.imps) * 100).toFixed(2);
+        const expanded = expandedOpportunityProductId === p.id;
+        const relatedPins = [...p.pins].sort((a, b) => (b.impressions || 0) - (a.impressions || 0));
+        const relatedPinsHtml = relatedPins.map(pin => {
+          const pinCtr = (pin.impressions || 0) > 0
+            ? ((pin.clicks || 0) / pin.impressions * 100).toFixed(2)
+            : '0.00';
+          return `
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border);">
+              <img src="${esc(pin.image_url || '')}" alt="" loading="lazy"
+                style="width:36px;height:46px;object-fit:cover;border-radius:4px;flex-shrink:0;" />
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(pin.title || 'Untitled pin')}</div>
+                <div style="font:11px 'DM Mono',monospace;color:var(--faint);margin-top:3px;">${(pin.impressions || 0).toLocaleString()} imps · ${pin.clicks || 0} clicks · ${pinCtr}% CTR</div>
+              </div>
+              <button class="btn-small" onclick="openOpportunityPin(${Number(pin.id)})">Review pin</button>
+            </div>`;
+        }).join('');
         return `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);">
-        <div style="flex:1;">
-          <div style="font-size:13px; font-weight:500;">${esc(prodInfo.substring(0, 60))}...</div>
-          <div style="font-size:11px; font-family:'DM Mono',monospace; color:var(--faint); margin-top:4px;">${p.imps.toLocaleString()} imps / ${p.clicks} clicks</div>
-        </div>
-        <span class="badge badge-pending" style="margin-left:12px;">CTR ${ctr}%</span>
+      <div style="padding:12px 0;border-bottom:1px solid var(--border);">
+        <button class="opportunity-toggle" aria-expanded="${expanded}"
+          onclick="toggleOpportunityProduct(${Number(p.id)})"
+          style="display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:0;border:0;background:transparent;text-align:left;cursor:pointer;color:inherit;">
+          <span style="flex:1;min-width:0;">
+            <span style="display:block;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(prodInfo)}</span>
+            <span style="display:block;font:11px 'DM Mono',monospace;color:var(--faint);margin-top:4px;">${p.imps.toLocaleString()} imps / ${p.clicks} clicks · ${p.pins.length} pins</span>
+          </span>
+          <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span class="badge badge-pending">CTR ${ctr}%</span>
+            <span aria-hidden="true" style="color:var(--blue);font-size:12px;">${expanded ? 'Hide −' : 'Inspect +'}</span>
+          </span>
+        </button>
+        ${expanded ? `<div style="padding-top:8px;">${relatedPinsHtml}</div>` : ''}
       </div>`;
       }).join('') : '<div style="font-size:13px; color:var(--faint); padding:10px 0;">No opportunity gap products found right now.</div>';
 
