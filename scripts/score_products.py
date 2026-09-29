@@ -449,6 +449,42 @@ Return ONLY a JSON array of strings, no markdown.
 
 # ── 5. Deterministic scoring engine ──────────────────────────
 
+SEASONAL_KEYWORDS = {
+    "spring": {
+        "months": {3, 4, 5},
+        "terms": ("spring", "easter", "floral", "pastel", "picnic", "light jacket", "raincoat"),
+    },
+    "summer": {
+        "months": {6, 7, 8},
+        "terms": ("summer", "fan", "cooling", "outdoor", "garden", "travel", "beach", "pool", "picnic", "bbq", "portable ac", "ice", "sun", "sandal", "holiday"),
+    },
+    "autumn": {
+        "months": {9, 10, 11},
+        "terms": ("autumn", "fall", "coat", "jacket", "knit", "jumper", "sweater", "boot", "scarf", "layer", "cosy", "cozy", "back to school"),
+    },
+    "winter": {
+        "months": {12, 1, 2},
+        "terms": ("winter", "christmas", "new year", "valentine", "warm", "heated", "glove", "hat", "boot", "coat", "thermal", "snow", "gift"),
+    },
+}
+
+
+def seasonal_bonus(product, sig, month=None):
+    current_month = month or datetime.now(timezone.utc).month
+    season = next(
+        (name for name, config in SEASONAL_KEYWORDS.items() if current_month in config["months"]),
+        None,
+    )
+    if season is None:
+        return 0
+
+    searchable_text = " ".join((
+        product.get("name", ""),
+        sig.get("niche", ""),
+        " ".join(sig.get("keywords", []) or []),
+    )).lower()
+    return 15 if any(term in searchable_text for term in SEASONAL_KEYWORDS[season]["terms"]) else 0
+
 def calculate_score(product, sig):
     """
     Deterministic, auditable score 0-100. No LLM needed.
@@ -545,27 +581,10 @@ def calculate_score(product, sig):
     score += mom_pts
 
     # ── 5. Seasonal Bonus (up to 15 pts) ─────────────────────
-    current_month = datetime.now(timezone.utc).month
-    
-    # Summer (May-August) keywords
-    summer_keywords = ["summer", "fan", "cooling", "outdoor", "garden", "travel", "beach", "pool", "picnic", "bbq", "portable ac", "ice", "sun"]
-    
-    is_summer_season = 5 <= current_month <= 8
-    
-    seasonal_pts = 0
-    if is_summer_season:
-        name_lower = product.get("name", "").lower()
-        niche_lower = sig.get("niche", "").lower()
-        keywords = sig.get("keywords", [])
-        
-        has_seasonal_match = any(k in name_lower or k in niche_lower for k in summer_keywords)
-        if not has_seasonal_match and keywords:
-            has_seasonal_match = any(any(sk in kw.lower() for sk in summer_keywords) for kw in keywords)
-            
-        if has_seasonal_match:
-            seasonal_pts = 15
-            breakdown.append(f"seasonal boost (+{seasonal_pts}pts)")
-            
+    seasonal_pts = seasonal_bonus(product, sig)
+    if seasonal_pts:
+        breakdown.append(f"seasonal boost (+{seasonal_pts}pts)")
+
     score += seasonal_pts
 
     final = min(score, 100)

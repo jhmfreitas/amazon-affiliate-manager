@@ -7,7 +7,7 @@ import math
 import requests
 import random
 from datetime import datetime, timezone
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from io import BytesIO
 from config import (
     SUPABASE_URL, SUPABASE_HEADERS, 
@@ -21,7 +21,6 @@ PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
 AMAZON_ASSOCIATE_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "").strip()
 
 # ── Config ───────────────────────────────────────────────────
-SLOTS      = 1   # How many different pin designs per product
 CANDIDATES = 2   # How many AI variations to brainstorm
 KEEP_TOP   = 1   # How many to actually save
 AMAZON_COUNTRY = "co.uk"
@@ -139,13 +138,16 @@ def load_font(name, size):
 def get_pexels_image(query):
     url = "https://api.pexels.com/v1/search"
     headers = {"Authorization": PEXELS_API_KEY}
-    params = {"query": query, "per_page": 1, "orientation": "portrait"}
+    params = {"query": query, "per_page": 8, "orientation": "portrait"}
     try:
-        resp = requests.get(url, headers=headers, params=params)
+        resp = requests.get(url, headers=headers, params=params, timeout=20)
+        resp.raise_for_status()
         data = resp.json()
-        if data["photos"]:
-            return data["photos"][0]["src"]["large"], data["photos"][0]["photographer"]
-    except: pass
+        if data.get("photos"):
+            photo = random.choice(data["photos"])
+            return photo["src"].get("portrait") or photo["src"]["large"], photo["photographer"]
+    except Exception as error:
+        log.warning(f"Pexels image search failed for '{query}': {error}")
     return None, None
 
 
@@ -218,13 +220,21 @@ def add_product_shadow(canvas, product_img, x, y):
 
 def create_pin_image(template_style, bg_url, product_url, title, price=None):
     """
-    Creates a single-product pin using the roundup grid's visual style.
+    Creates a product pin with a lifestyle backdrop and product-focused layout.
     """
+    bg_resp = requests.get(bg_url, timeout=15)
+    bg_resp.raise_for_status()
+    background = Image.open(BytesIO(bg_resp.content)).convert("RGB")
+
     pr_resp = requests.get(product_url, timeout=15)
+    pr_resp.raise_for_status()
     pr = Image.open(BytesIO(pr_resp.content)).convert("RGBA")
 
     W, H = 1000, 1500
-    canvas = Image.new("RGBA", (W, H), COLORS["bg_cream"])
+    background = ImageOps.fit(background, (W, H), method=Image.Resampling.LANCZOS)
+    canvas = background.convert("RGBA")
+    wash = Image.new("RGBA", (W, H), (*COLORS["bg_cream"], 118))
+    canvas = Image.alpha_composite(canvas, wash)
     draw = ImageDraw.Draw(canvas)
 
     title_font = load_font("title", 50)
@@ -501,8 +511,8 @@ if __name__ == "__main__":
                 board_id = get_board_for_product(product)
                 
                 # Generate and Save
-                candidates = generate_candidates(product, SLOTS, product.get('pinterest_keywords', []))
-                for pin in candidates:
+                candidates = generate_candidates(product, CANDIDATES, product.get('pinterest_keywords', []))
+                for pin in candidates[:KEEP_TOP]:
                     pexels_url, photog = get_pexels_image(pin['pexels_search'])
                     if not pexels_url: 
                         log.error("No image found for pexels search")
