@@ -822,6 +822,127 @@
       margin-bottom: 12px;
     }
 
+    .action-groups {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+      gap: 10px;
+    }
+
+    .action-group {
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+    }
+
+    .action-group[open] {
+      border-color: var(--blue);
+    }
+
+    .action-group summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 64px;
+      padding: 10px 12px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .action-group summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .action-count {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 28px;
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--text);
+      font: 600 12px 'DM Mono', monospace;
+    }
+
+    .action-summary-copy {
+      display: grid;
+      gap: 3px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .action-summary-title {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .action-summary-guidance {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .action-summary-toggle {
+      flex: 0 0 auto;
+      color: var(--blue);
+      font-size: 11px;
+    }
+
+    .action-list {
+      padding: 0 12px 8px;
+    }
+
+    .pin-action-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .pin-action-thumb {
+      width: 36px;
+      height: 46px;
+      flex: 0 0 36px;
+      border-radius: 4px;
+      object-fit: cover;
+    }
+
+    .pin-action-copy {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pin-action-title,
+    .pin-action-product {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pin-action-title {
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .pin-action-product,
+    .pin-action-metrics {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .pin-action-metrics {
+      font-family: 'DM Mono', monospace;
+    }
+
+    .action-empty {
+      padding: 10px 0;
+      color: var(--faint);
+      font-size: 12px;
+    }
+
     .signal {
       background: var(--bg);
       border-radius: 8px;
@@ -2240,12 +2361,6 @@
     // ── Render performance ───────────────────────────────────────
 
     let amazonStats = JSON.parse(localStorage.getItem('amazonStats') || '{}');
-    let expandedOpportunityProductId = null;
-
-    function toggleOpportunityProduct(productId) {
-      expandedOpportunityProductId = expandedOpportunityProductId === productId ? null : productId;
-      renderPerformance();
-    }
 
     function openOpportunityPin(pinId) {
       setFilter('posted', document.getElementById('nav-posted'));
@@ -2342,17 +2457,16 @@
           ? `https://www.pinterest.com/pin/${encodeURIComponent(item.pin.pinterest_id)}/`
           : null;
         return `
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);">
-            <img src="${esc(item.pin.image_url || '')}" alt="" loading="lazy"
-              style="width:42px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;" />
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.pin.title || productName)}</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px;">${esc(productName)}</div>
-              <div style="font:11px 'DM Mono',monospace;color:var(--faint);margin-top:3px;">
+          <div class="pin-action-row">
+            <img class="pin-action-thumb" src="${esc(item.pin.image_url || '')}" alt="" loading="lazy" />
+            <div class="pin-action-copy">
+              <div class="pin-action-title">${esc(item.pin.title || productName)}</div>
+              <div class="pin-action-product">${esc(productName)}</div>
+              <div class="pin-action-metrics">
                 ${item.ageDays === null ? 'Age unknown' : `${item.ageDays}d`} · ${item.impressions.toLocaleString()} imps · ${item.clicks} clicks · ${item.ctr.toFixed(2)}% CTR
               </div>
             </div>
-            ${pinUrl ? `<a href="${esc(pinUrl)}" target="_blank" rel="noopener" class="btn-small" style="text-decoration:none;white-space:nowrap;">View pin ↗</a>` : ''}
+            ${pinUrl ? `<a href="${esc(pinUrl)}" target="_blank" rel="noopener" class="btn-small" style="text-decoration:none;white-space:nowrap;">View ↗</a>` : ''}
           </div>`;
       }).join('');
 
@@ -2360,15 +2474,20 @@
         ? 'No pins are waiting for more data.'
         : 'No pins currently match this signal.';
       return `
-        <div style="min-width:0;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
-            <h4 style="font-size:13px;font-weight:600;margin:0;">${title}</h4>
-            <span class="badge ${kind === 'low' ? 'badge-pending' : ''}">${items.length}</span>
+        <details class="action-group">
+          <summary>
+            <span class="action-count">${items.length}</span>
+            <span class="action-summary-copy">
+              <span class="action-summary-title">${title}</span>
+              <span class="action-summary-guidance">${guidance}</span>
+            </span>
+            <span class="action-summary-toggle">Inspect</span>
+          </summary>
+          <div class="action-list">
+            ${rows || `<div class="action-empty">${emptyText}</div>`}
+            ${items.length > 4 ? `<div class="action-empty">${items.length - 4} more pins in this group</div>` : ''}
           </div>
-          <p style="font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 8px;">${guidance}</p>
-          ${rows || `<div style="font-size:12px;color:var(--faint);padding:8px 0;">${emptyText}</div>`}
-          ${items.length > 4 ? `<div style="font-size:11px;color:var(--faint);padding-top:6px;">${items.length - 4} more</div>` : ''}
-        </div>`;
+        </details>`;
     }
 
     function renderPerformance() {
@@ -2475,7 +2594,6 @@
       const oppHtml = oppProducts.length ? oppProducts.map((p) => {
         const prodInfo = products[p.id] ? products[p.id].name : `Product #${p.id}`;
         const ctr = ((p.clicks / p.imps) * 100).toFixed(2);
-        const expanded = expandedOpportunityProductId === p.id;
         const relatedPins = [...p.pins].sort((a, b) => (b.impressions || 0) - (a.impressions || 0));
         const relatedPinsHtml = relatedPins.map(pin => {
           const pinCtr = (pin.impressions || 0) > 0
@@ -2493,21 +2611,17 @@
             </div>`;
         }).join('');
         return `
-      <div style="padding:12px 0;border-bottom:1px solid var(--border);">
-        <button class="opportunity-toggle" aria-expanded="${expanded}"
-          onclick="toggleOpportunityProduct(${Number(p.id)})"
-          style="display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:0;border:0;background:transparent;text-align:left;cursor:pointer;color:inherit;">
+      <details style="padding:12px 0;border-bottom:1px solid var(--border);">
+        <summary style="display:flex;align-items:center;gap:8px;cursor:pointer;">
           <span style="flex:1;min-width:0;">
             <span style="display:block;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(prodInfo)}</span>
             <span style="display:block;font:11px 'DM Mono',monospace;color:var(--faint);margin-top:4px;">${p.imps.toLocaleString()} imps / ${p.clicks} clicks · ${p.pins.length} pins</span>
           </span>
-          <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-            <span class="badge badge-pending">CTR ${ctr}%</span>
-            <span aria-hidden="true" style="color:var(--blue);font-size:12px;">${expanded ? 'Hide −' : 'Inspect +'}</span>
-          </span>
-        </button>
-        ${expanded ? `<div style="padding-top:8px;">${relatedPinsHtml}</div>` : ''}
-      </div>`;
+          <span class="badge badge-pending" style="flex-shrink:0;">CTR ${ctr}%</span>
+          <span style="color:var(--blue);font-size:11px;flex-shrink:0;">Inspect</span>
+        </summary>
+        <div style="padding-top:8px;">${relatedPinsHtml}</div>
+      </details>`;
       }).join('') : '<div style="font-size:13px; color:var(--faint); padding:10px 0;">No opportunity gap products found right now.</div>';
 
       const pinSignals = postedPins.map(pin => {
@@ -2540,7 +2654,7 @@
           <p style="font-size:12px;color:var(--muted);margin:0 0 18px;">
             Wait for 7 days or 100 impressions before judging a pin. Low reach points to distribution; low CTR points to the creative or offer.
           </p>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;">
+          <div class="action-groups">
             ${renderDiagnosticGroup('Still collecting data', 'Too new or too few impressions to diagnose.', stillCollecting, 'early')}
             ${renderDiagnosticGroup('Low reach', 'Posted 7+ days ago with fewer than 100 impressions. Review board and keyword fit.', lowReachPins, 'low')}
             ${renderDiagnosticGroup('Low click-through', 'At least 100 impressions but under 0.5% CTR. Test a clearer hook or product benefit.', lowCtrPins, 'low')}
