@@ -133,7 +133,8 @@ def fetch_current_price(asin, session):
             req_headers = {
                 "Referer": f"https://www.amazon.co.uk/s?k={asin}",
             }
-            response = session.get(url, headers=req_headers, timeout=15)
+            # Explicitly pass cookies on every request so Amazon never overrides with EUR from EU runner IPs
+            response = session.get(url, headers=req_headers, cookies=get_amazon_cookies(), timeout=15)
 
             if is_blocked_response(response):
                 log.warning("Amazon blocked price refresh for %s (attempt %s/%s)", asin, attempt, MAX_RETRIES)
@@ -159,12 +160,12 @@ def fetch_current_price(asin, session):
                     log.info("Product %s is currently unavailable / out of stock on Amazon", asin)
                     return None
 
-                # Search for non-GBP price in price tags (avoiding javascript $. / scripts)
+                # Search for non-GBP price in price containers (handling both €19.99 and 19.99€)
                 foreign = None
-                for price_tag in soup.select(".a-price .a-offscreen, #priceblock_ourprice, #priceblock_dealprice"):
-                    t = price_tag.get_text(strip=True)
-                    if re.search(r"(?:EUR|€|USD|\$)\s*\d", t):
-                        foreign = t
+                for price_tag in soup.select(".a-price, .priceToPay, [class*='price']"):
+                    t = price_tag.get_text(" ", strip=True)
+                    if re.search(r"(?:EUR|€|USD|\$)\s*\d|\d\s*(?:EUR|€)", t):
+                        foreign = t[:30]
                         break
 
                 if foreign:
@@ -205,19 +206,7 @@ def stored_price_matches(stored_price, current_price):
 
 def refresh_prices(products, dry_run):
     session = requests.Session()
-    # Keep one consistent User-Agent across the entire session to avoid bot flagging
     session.headers.update(random_headers())
-    cookies = get_amazon_cookies()
-    session.cookies.update(cookies)
-    for k, v in cookies.items():
-        session.cookies.set(k, v, domain=".amazon.co.uk")
-
-    try:
-        log.info("Warming up Amazon UK session...")
-        session.get("https://www.amazon.co.uk/", timeout=15)
-        time.sleep(1.5)
-    except Exception as e:
-        log.warning("Amazon session warm-up request failed: %s", e)
 
     changed = unchanged = missing = 0
     for index, product in enumerate(products, start=1):
