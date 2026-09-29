@@ -69,7 +69,12 @@ def extract_current_gbp_price(soup):
 
 def is_blocked_response(response):
     body = response.text.lower()
-    return response.status_code in (202, 429, 503) or any(marker in body for marker in BLOCK_MARKERS)
+    return (
+        response.status_code in (202, 429, 503)
+        or any(marker in body for marker in BLOCK_MARKERS)
+        or "captcha" in body
+        or "sorry! something went wrong" in body
+    )
 
 
 def fetch_current_price(asin, session):
@@ -78,26 +83,53 @@ def fetch_current_price(asin, session):
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            headers = random_headers()
-            headers["Referer"] = "https://www.amazon.co.uk/"
-            response = session.get(url, headers=headers, timeout=15)
+            req_headers = {
+                "Referer": f"https://www.amazon.co.uk/s?k={asin}",
+            }
+            response = session.get(url, headers=req_headers, timeout=15)
 
             if is_blocked_response(response):
                 log.warning("Amazon blocked price refresh for %s (attempt %s/%s)", asin, attempt, MAX_RETRIES)
             else:
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "html.parser")
+                title = soup.title.get_text(strip=True) if soup.title else ""
+
+                if "robot check" in title.lower() or "service unavailable" in title.lower() or soup.select_one("form[action*='validateCaptcha']"):
+                    log.warning("Amazon served CAPTCHA/Robot Check for %s (attempt %s/%s)", asin, attempt, MAX_RETRIES)
+                    if attempt < MAX_RETRIES:
+                        time.sleep(attempt * 3)
+                    continue
+
                 price = extract_current_gbp_price(soup)
                 if price is not None:
                     return price
-                foreign = re.search(r"(?:EUR|€|\$)\s*[\d.]+", response.text)
+
+                # Check for explicit out of stock / unavailable
+                avail = soup.select_one("#availability, #outOfStock")
+                avail_text = avail.get_text(" ", strip=True) if avail else None
+                if avail_text and "currently unavailable" in avail_text.lower():
+                    log.info("Product %s is currently unavailable / out of stock on Amazon", asin)
+                    return None
+
+                # Search for non-GBP price in price tags (avoiding javascript $. / scripts)
+                foreign = None
+                for price_tag in soup.select(".a-price .a-offscreen, #priceblock_ourprice, #priceblock_dealprice"):
+                    t = price_tag.get_text(strip=True)
+                    if re.search(r"(?:EUR|€|USD|\$)\s*\d", t):
+                        foreign = t
+                        break
+
                 if foreign:
                     log.info(
                         "No GBP offer price found for %s (detected non-GBP price '%s') (attempt %s/%s)",
-                        asin, foreign.group(0), attempt, MAX_RETRIES
+                        asin, foreign, attempt, MAX_RETRIES
                     )
                 else:
-                    log.info("No GBP offer price found for %s (attempt %s/%s)", asin, attempt, MAX_RETRIES)
+                    log.info(
+                        "No GBP offer price found for %s (title=%r, len=%d) (attempt %s/%s)",
+                        asin, title[:60], len(response.text), attempt, MAX_RETRIES
+                    )
         except requests.RequestException as error:
             log.warning("Price refresh request failed for %s (attempt %s/%s): %s", asin, attempt, MAX_RETRIES, error)
 
@@ -126,11 +158,19 @@ def stored_price_matches(stored_price, current_price):
 
 def refresh_prices(products, dry_run):
     session = requests.Session()
+    # Keep one consistent User-Agent across the entire session to avoid bot flagging
     session.headers.update(random_headers())
     cookies = get_amazon_cookies()
     session.cookies.update(cookies)
     for k, v in cookies.items():
         session.cookies.set(k, v, domain=".amazon.co.uk")
+
+    try:
+        log.info("Warming up Amazon UK session...")
+        session.get("https://www.amazon.co.uk/", timeout=15)
+        time.sleep(1.5)
+    except Exception as e:
+        log.warning("Amazon session warm-up request failed: %s", e)
 
     changed = unchanged = missing = 0
     for index, product in enumerate(products, start=1):
