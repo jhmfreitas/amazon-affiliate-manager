@@ -18,6 +18,7 @@ from pinterest_auth import PinterestAuth
 # ── API Keys ─────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
+AMAZON_ASSOCIATE_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "").strip()
 
 # ── Config ───────────────────────────────────────────────────
 SLOTS      = 1   # How many different pin designs per product
@@ -71,8 +72,9 @@ def get_rotation_candidates(limit=5):
     )
     resp.raise_for_status()
     products = resp.json()
+    products = [product for product in products if product.get("asin") and product.get("image_url")]
     if not products:
-        raise ValueError("No active products found.")
+        raise ValueError("No active products with an ASIN and product image found.")
 
     now = datetime.now(timezone.utc)
     def rotation_rank(p):
@@ -89,9 +91,11 @@ def get_rotation_candidates(limit=5):
 
 # ── 2. Affiliate URL ──────────────────────────────────────────
 
-def get_affiliate_url(asin, fallback_url=None):
-    """Simple passthrough for now, can be expanded to PA-API."""
-    return fallback_url or f"https://www.amazon.co.uk/dp/{asin}?tag=pinnpurchas0f-21"
+def get_affiliate_url(asin):
+    """Build a product-detail Special Link using the configured Associates tag."""
+    if not AMAZON_ASSOCIATE_TAG:
+        raise RuntimeError("AMAZON_ASSOCIATE_TAG is required to generate affiliate links")
+    return f"https://www.amazon.co.uk/dp/{asin}?tag={AMAZON_ASSOCIATE_TAG}&linkCode=ll2"
 
 # ── 3. Font Loading ──────────────────────────────────────────
 
@@ -493,7 +497,7 @@ if __name__ == "__main__":
         for product in targets:
             print(f"\n--- {product['name'][:50]} ---")
             try:
-                affiliate_url = get_affiliate_url(product['asin'], product.get('affiliate_url'))
+                affiliate_url = get_affiliate_url(product['asin'])
                 board_id = get_board_for_product(product)
                 
                 # Generate and Save
@@ -511,7 +515,7 @@ if __name__ == "__main__":
                     img_bytes = create_pin_image(
                         template_style, 
                         pexels_url, 
-                        product.get('image_url', 'https://via.placeholder.com/800'), 
+                        product['image_url'],
                         pin['title'],
                         price=product.get('price')
                     )

@@ -9,17 +9,33 @@ The Amazon Creators API Affiliate Pipeline.
 4.  STORAGE: Saves to Supabase with full SEO metadata.
 """
 
-import os, time, requests
+import os, json, time, requests, re, random
 from datetime import datetime, timezone
+from bs4 import BeautifulSoup
 from amazon_creatorsapi import AmazonCreatorsApi
 from amazon_creatorsapi.errors import ItemsNotFoundError
 from amazon_creatorsapi.models import SearchItemsResource
-from config import log, get_commission, supabase_get, supabase_post
+from config import (
+    log, get_commission, random_headers, get_amazon_cookies,
+    supabase_get, supabase_post
+)
 
 # ── CONFIGURATION ───────────────────────────────────────────
 
 AMAZON_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "pinnpurchas0f-21") # Fallback if not set
 MIN_PRICE  = 15.0
+
+BLOCK_MARKERS = [
+    "api-services-support@amazon.com",
+    "To discuss automated access",
+    "Sorry, we just need to make sure",
+    "Enter the characters you see below",
+    "/errors/validateCaptcha",
+    "Robot Check",
+    "captcha",
+    "automated access to Amazon data",
+    "Sorry! Something went wrong",
+]
 
 # Keyword noise filters — things that waste a request because they were
 # never going to match real UK Amazon listings.
@@ -217,12 +233,11 @@ def make_amazon_client():
     credential_secret = os.environ.get("AMAZON_CREDENTIAL_SECRET", "").strip()
     api_version = os.environ.get("AMAZON_CREATORS_API_VERSION", "").strip()
     if not credential_id or not credential_secret:
-        raise RuntimeError("AMAZON_CREDENTIAL_ID and AMAZON_CREDENTIAL_SECRET are required")
+        log.warning("Creators API credentials are missing; using the Amazon scraper fallback")
+        return None
     if not api_version:
-        raise RuntimeError(
-            "Set the GitHub Actions variable AMAZON_CREATORS_API_VERSION to the "
-            "Version shown for this Creators API credential."
-        )
+        log.warning("Creators API version is missing; using the Amazon scraper fallback")
+        return None
 
     return AmazonCreatorsApi(
         credential_id=credential_id,
@@ -232,6 +247,161 @@ def make_amazon_client():
         country="UK",
         throttling=1,
     )
+
+
+def make_amazon_session():
+    session = requests.Session()
+    session.headers.update(random_headers())
+    session.cookies.update(get_amazon_cookies())
+    try:
+        session.get("https://www.amazon.co.uk/", timeout=15)
+        time.sleep(random.uniform(1.5, 3))
+    except Exception as error:
+        log.warning(f"Amazon session warm-up failed; continuing: {error}")
+    return session
+
+
+def is_blocked_response(response):
+    if response.status_code in (202, 429, 503):
+        return True
+    body = response.text.lower()
+    return any(marker.lower() in body for marker in BLOCK_MARKERS)
+
+
+def scrape_amazon_search(keyword, session):
+    url = f"https://www.amazon.co.uk/s?k={requests.utils.quote(keyword)}"
+    headers = random_headers()
+    headers["Referer"] = "https://www.amazon.co.uk/"
+
+    for attempt in range(1, 3):
+        try:
+            response = session.get(url, headers=headers, timeout=15)
+            if is_blocked_response(response):
+                log.warning(
+                    f"Amazon scraper received status {response.status_code} for '{keyword}' "
+                    f"({len(response.text)} response characters, attempt {attempt}/2)"
+                )
+                if attempt == 1:
+                    session.headers.update(random_headers())
+                    time.sleep(random.uniform(6, 10))
+                    continue
+                return []
+
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            cards = soup.find_all("div", {"data-asin": True})
+            asins = []
+            for card in cards:
+                asin = card.get("data-asin", "").strip()
+                if not re.fullmatch(r"[A-Z0-9]{10}", asin):
+                    continue
+                if "Sponsored" in card.get_text() or "AdHolder" in card.get("class", []):
+                    continue
+                asins.append(asin)
+                if len(asins) == 4:
+                    break
+
+            if not asins:
+                log.info(
+                    f"No organic Amazon product cards for '{keyword}' "
+                    f"(status {response.status_code}, {len(cards)} raw cards)"
+                )
+            return asins
+        except requests.RequestException as error:
+            log.warning(f"Amazon search failed for '{keyword}' on attempt {attempt}/2: {error}")
+            if attempt == 1:
+                time.sleep(random.uniform(3, 6))
+
+    return []
+
+
+def extract_current_price(soup):
+    selectors = [
+        "#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen",
+        "#corePrice_desktop .priceToPay .a-offscreen",
+        ".priceToPay .a-offscreen",
+        "#priceblock_dealprice",
+        "#priceblock_ourprice",
+        "span.a-price:not(.a-text-price) .a-offscreen",
+    ]
+    for selector in selectors:
+        for price_tag in soup.select(selector):
+            match = re.search(r"£\s*([\d,]+(?:\.\d{1,2})?)", price_tag.get_text(" ", strip=True))
+            if match:
+                return float(match.group(1).replace(",", ""))
+    return 0.0
+
+
+def extract_product_details(asin, session):
+    url = f"https://www.amazon.co.uk/dp/{asin}"
+    headers = random_headers()
+    headers["Referer"] = "https://www.amazon.co.uk/"
+
+    for attempt in range(1, 3):
+        try:
+            response = session.get(url, headers=headers, timeout=15)
+            if is_blocked_response(response):
+                log.warning(f"Amazon scraper received status {response.status_code} extracting {asin}")
+                if attempt == 1:
+                    session.headers.update(random_headers())
+                    time.sleep(random.uniform(5, 8))
+                    continue
+                return None
+
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            title_tag = soup.find(id="productTitle")
+            name = title_tag.get_text(" ", strip=True)[:150] if title_tag else None
+            price = extract_current_price(soup)
+
+            image_url = None
+            image_tag = soup.find("img", id="landingImage") or soup.find("img", id="main-image")
+            if image_tag:
+                image_url = image_tag.get("data-old-hires")
+                if not image_url and image_tag.get("data-a-dynamic-image"):
+                    try:
+                        images = json.loads(image_tag["data-a-dynamic-image"])
+                        image_url = max(
+                            images.items(),
+                            key=lambda entry: entry[1][0] * entry[1][1],
+                        )[0]
+                    except (ValueError, TypeError, IndexError):
+                        image_url = image_tag.get("src")
+
+            bsr = None
+            bsr_label = soup.find(string=re.compile(r"Best\s*Sellers?\s*Rank", re.I))
+            if bsr_label:
+                container = bsr_label.find_parent(["span", "li", "td", "div"])
+                if container:
+                    match = re.search(r"#([\d,]+)\s+in\s+", container.get_text())
+                    if match:
+                        bsr = int(match.group(1).replace(",", ""))
+
+            if name and price > 0 and image_url:
+                return {
+                    "asin": asin,
+                    "name": name,
+                    "price": price,
+                    "image_url": image_url,
+                    "bsr": bsr,
+                }
+            log.info(f"Amazon product page did not provide complete data for {asin}")
+        except requests.RequestException as error:
+            log.warning(f"Amazon product request failed for {asin} on attempt {attempt}/2: {error}")
+        if attempt == 1:
+            time.sleep(2)
+    return None
+
+
+def scrape_amazon_products(keyword, session):
+    products = []
+    for asin in scrape_amazon_search(keyword, session):
+        product = extract_product_details(asin, session)
+        if product:
+            products.append(product)
+        time.sleep(random.uniform(2, 4))
+    log.info(f"Amazon scraper extracted {len(products)} product(s) for '{keyword}'")
+    return products
 
 
 def normalize_amazon_item(item):
@@ -291,6 +461,20 @@ def search_amazon_products(keyword, client):
     return products
 
 
+def search_products_with_fallback(keyword, client, session):
+    if client is not None:
+        try:
+            return search_amazon_products(keyword, client), client, session
+        except Exception as error:
+            log.warning(
+                f"Creators API failed for '{keyword}'; switching to the scraper fallback: {error}"
+            )
+
+    if session is None:
+        session = make_amazon_session()
+    return scrape_amazon_products(keyword, session), None, session
+
+
 # ── MAIN PIPELINE ────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -304,7 +488,12 @@ if __name__ == "__main__":
     total_found = 0       # every ASIN Amazon search returned, across all keywords
     total_duplicate = 0   # of those, how many were already in the database
 
-    amazon_client = make_amazon_client()
+    try:
+        amazon_client = make_amazon_client()
+    except Exception as error:
+        log.warning(f"Creators API client setup failed; using the scraper fallback: {error}")
+        amazon_client = None
+    amazon_session = None
 
     for niche in get_active_niches():
         print(f"\nNICHE: {niche['name'].upper()}")
@@ -315,8 +504,9 @@ if __name__ == "__main__":
         for kw in keywords:
             print(f"  Trend: '{kw}'")
 
-            # Step 2: Search Amazon through the Creators API.
-            products = search_amazon_products(kw, amazon_client)
+            products, amazon_client, amazon_session = search_products_with_fallback(
+                kw, amazon_client, amazon_session
+            )
             new_products = [product for product in products if product["asin"] not in existing_asins]
             total_found += len(products)
             total_duplicate += len(products) - len(new_products)
@@ -369,7 +559,7 @@ if __name__ == "__main__":
               "a title, an image, or a price above the minimum.")
     if not total_found:
         raise RuntimeError(
-            "Amazon Creators API returned zero products across all search terms; "
-            "verify API access, credentials, API version, and query eligibility."
+            "No products were extracted from the Creators API or scraper fallback; "
+            "check per-keyword API and Amazon response logs."
         )
     print("=" * 60)
