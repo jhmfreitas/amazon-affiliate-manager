@@ -59,7 +59,7 @@ STOREFRONT_URL = os.environ.get("AMAZON_STOREFRONT_URL", "").strip()
 
 def get_theme_groups():
     """Fetch active products and group same-category items into themes,
-    preferring items that haven't been pinned recently."""
+    with cooldown and weighted-random selection for diversity."""
     resp = requests.get(
         f"{SUPABASE_URL}/rest/v1/products",
         headers=SUPABASE_HEADERS,
@@ -69,6 +69,7 @@ def get_theme_groups():
     products = resp.json()
 
     now = datetime.now(timezone.utc)
+    COOLDOWN_DAYS = 3
 
     def days_since_pinned(p):
         lp = p.get("last_pinned_at")
@@ -76,7 +77,7 @@ def get_theme_groups():
             return 999
         try:
             lp_dt = datetime.fromisoformat(lp.replace("Z", "+00:00"))
-            return (now - lp_dt).days
+            return (now - lp_dt).total_seconds() / 86400
         except Exception:
             return 999
 
@@ -89,10 +90,33 @@ def get_theme_groups():
 
     groups = []
     for category, items in by_category.items():
-        if len(items) < MIN_GROUP:
+        # Apply cooldown — prefer products not pinned recently
+        eligible = [p for p in items if days_since_pinned(p) >= COOLDOWN_DAYS]
+        # Fall back to all items if cooldown empties the pool
+        if len(eligible) < MIN_GROUP:
+            eligible = items
+
+        if len(eligible) < MIN_GROUP:
             continue
-        items.sort(key=lambda p: (days_since_pinned(p), p.get("score") or 0), reverse=True)
-        groups.append((category, items[:GRID_SIZE]))
+
+        # Weighted-random pick of GRID_SIZE products from eligible pool
+        def weight(p):
+            score = max(p.get("score") or 1, 1)
+            days = days_since_pinned(p)
+            return math.sqrt(score) * min(days / 3.0, 10.0)
+
+        selected = []
+        pool = list(eligible)
+        for _ in range(min(GRID_SIZE, len(pool))):
+            ws = [weight(p) for p in pool]
+            total = sum(ws)
+            if total == 0:
+                break
+            chosen_idx = random.choices(range(len(pool)), weights=ws, k=1)[0]
+            selected.append(pool.pop(chosen_idx))
+
+        if len(selected) >= MIN_GROUP:
+            groups.append((category, selected))
 
     random.shuffle(groups)
     return groups

@@ -58,35 +58,81 @@ COLORS = {
 
 # ── 1. Rotation Candidates ────────────────────────────────────
 
+COOLDOWN_DAYS = 3   # Don't re-pin a product within this many days
+
 def get_rotation_candidates(limit=5):
-    """Fetch a pool of products and pick the best for rotation."""
+    """Fetch a diverse pool of products using weighted-random selection.
+
+    1. Hard-exclude anything pinned in the last COOLDOWN_DAYS days.
+    2. Weight remaining products by score × freshness so stale products
+       get a real chance instead of the same top-scorers every run.
+    3. Use weighted random sampling to pick `limit` products.
+    """
     resp = requests.get(
         f"{SUPABASE_URL}/rest/v1/products",
         headers=SUPABASE_HEADERS,
         params={
             "active": "eq.true",
             "order":  "score.desc",
-            "limit":  "50"
+            "limit":  "100"
         }
     )
     resp.raise_for_status()
     products = resp.json()
-    products = [product for product in products if product.get("asin") and product.get("image_url")]
+    products = [p for p in products if p.get("asin") and p.get("image_url")]
     if not products:
         raise ValueError("No active products with an ASIN and product image found.")
 
     now = datetime.now(timezone.utc)
-    def rotation_rank(p):
+
+    def days_since_pinned(p):
         lp = p.get("last_pinned_at")
-        if not lp: return 1000 + (p.get("score") or 0)
+        if not lp:
+            return 999
         try:
             lp_dt = datetime.fromisoformat(lp.replace("Z", "+00:00"))
-            days_since = (now - lp_dt).days
-            return (p.get("score") or 0) + (min(days_since, 14) * 5)
-        except: return p.get("score") or 0
+            return (now - lp_dt).total_seconds() / 86400
+        except Exception:
+            return 999
 
-    products.sort(key=rotation_rank, reverse=True)
-    return products[:limit]
+    # ── Step 1: Hard cooldown — drop recently pinned products ──
+    eligible = [p for p in products if days_since_pinned(p) >= COOLDOWN_DAYS]
+
+    # If cooldown filters out everything, relax to the least-recently-pinned half
+    if not eligible:
+        products.sort(key=lambda p: days_since_pinned(p), reverse=True)
+        eligible = products[:max(len(products) // 2, limit)]
+
+    # ── Step 2: Weighted random selection ─────────────────────
+    # Weight = score_component × freshness_multiplier
+    #   score_component: ensures quality still matters (but not overwhelmingly)
+    #   freshness_mult:  products not pinned recently get a strong boost
+    def selection_weight(p):
+        score = max(p.get("score") or 1, 1)           # floor at 1
+        days = days_since_pinned(p)
+        # Sqrt of score dampens the advantage of top scorers
+        score_component = math.sqrt(score)
+        # Freshness: never-pinned = 10x boost, recently pinned = 1x
+        freshness_mult = min(days / 3.0, 10.0)
+        return score_component * freshness_mult
+
+    weights = [selection_weight(p) for p in eligible]
+
+    # random.choices allows repeats; use a loop to pick unique products
+    selected = []
+    remaining = list(zip(eligible, weights))
+    for _ in range(min(limit, len(remaining))):
+        items, ws = zip(*remaining)
+        total = sum(ws)
+        if total == 0:
+            break
+        probs = [w / total for w in ws]
+        chosen_idx = random.choices(range(len(items)), weights=probs, k=1)[0]
+        selected.append(items[chosen_idx])
+        remaining.pop(chosen_idx)
+
+    log.info(f"Rotation: {len(products)} active → {len(eligible)} eligible → {len(selected)} selected")
+    return selected
 
 # ── 2. Affiliate URL ──────────────────────────────────────────
 
