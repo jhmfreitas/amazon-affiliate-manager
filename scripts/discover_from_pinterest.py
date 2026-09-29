@@ -215,13 +215,19 @@ AMAZON_SEARCH_RESOURCES = [
 def make_amazon_client():
     credential_id = os.environ.get("AMAZON_CREDENTIAL_ID", "").strip()
     credential_secret = os.environ.get("AMAZON_CREDENTIAL_SECRET", "").strip()
+    api_version = os.environ.get("AMAZON_CREATORS_API_VERSION", "").strip()
     if not credential_id or not credential_secret:
         raise RuntimeError("AMAZON_CREDENTIAL_ID and AMAZON_CREDENTIAL_SECRET are required")
+    if not api_version:
+        raise RuntimeError(
+            "Set the GitHub Actions variable AMAZON_CREATORS_API_VERSION to the "
+            "Version shown for this Creators API credential."
+        )
 
     return AmazonCreatorsApi(
         credential_id=credential_id,
         credential_secret=credential_secret,
-        version=os.environ.get("AMAZON_CREATORS_API_VERSION", "2.2"),
+        version=api_version,
         tag=AMAZON_TAG,
         country="UK",
         throttling=1,
