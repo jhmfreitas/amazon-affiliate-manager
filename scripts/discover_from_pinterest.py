@@ -317,8 +317,10 @@ def scrape_amazon_search(keyword, session):
 
 def extract_current_price(soup):
     selectors = [
-        "#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen",
-        "#corePrice_desktop .priceToPay .a-offscreen",
+        "#corePriceDisplay_desktop_feature_div .priceToPay .a-price:not(.a-text-price) .a-offscreen",
+        "#corePrice_desktop .priceToPay .a-price:not(.a-text-price) .a-offscreen",
+        "#apex_desktop .priceToPay .a-price:not(.a-text-price) .a-offscreen",
+        "#buybox .a-price:not(.a-text-price) .a-offscreen",
         ".priceToPay .a-offscreen",
         "#priceblock_dealprice",
         "#priceblock_ourprice",

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from io import BytesIO
 from config import (
-    SUPABASE_URL, SUPABASE_HEADERS, 
+    AMAZON_TAG, SUPABASE_URL, SUPABASE_HEADERS,
     supabase_get, supabase_post, log
 )
 from pinterest_auth import PinterestAuth
@@ -18,7 +18,7 @@ from pinterest_auth import PinterestAuth
 # ── API Keys ─────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
-AMAZON_ASSOCIATE_TAG = os.environ.get("AMAZON_ASSOCIATE_TAG", "").strip()
+AMAZON_ASSOCIATE_TAG = (os.environ.get("AMAZON_ASSOCIATE_TAG") or AMAZON_TAG).strip()
 
 # ── Config ───────────────────────────────────────────────────
 CANDIDATES = 2   # How many AI variations to brainstorm
@@ -90,9 +90,11 @@ def get_rotation_candidates(limit=5):
 
 # ── 2. Affiliate URL ──────────────────────────────────────────
 
-def get_affiliate_url(asin):
+def get_affiliate_url(asin, fallback_url=None):
     """Build a product-detail Special Link using the configured Associates tag."""
     if not AMAZON_ASSOCIATE_TAG:
+        if fallback_url:
+            return fallback_url
         raise RuntimeError("AMAZON_ASSOCIATE_TAG is required to generate affiliate links")
     return f"https://www.amazon.co.uk/dp/{asin}?tag={AMAZON_ASSOCIATE_TAG}&linkCode=ll2"
 
@@ -419,11 +421,11 @@ Return ONLY a JSON list of objects with these fields:
                 err_msg = e.response.text
             print(f"  Gemini Error (Attempt {attempt+1}/3): {err_msg}")
             
-            # Fallback to gemini-2.0-flash on quota/availability issues
+            # Fall back to the current Gemini Flash model on transient failures.
             if attempt < 2:
                 if "429" in err_msg or "503" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "UNAVAILABLE" in err_msg:
-                    print("  Switching to gemini-2.0-flash for next attempt...")
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                    print("  Switching to gemini-3.8-flash for next attempt...")
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
                 time.sleep(5 * (attempt + 1))
             else:
                 return []

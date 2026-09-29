@@ -168,8 +168,8 @@ Return ONLY a single JSON object (not a list) with these fields:
 
             if attempt < 2:
                 if "429" in err_msg or "503" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "UNAVAILABLE" in err_msg:
-                    print("  Switching to gemini-2.0-flash for next attempt...")
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                    print("  Switching to gemini-3.8-flash for next attempt...")
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
                 time.sleep(5 * (attempt + 1))
             else:
                 return None

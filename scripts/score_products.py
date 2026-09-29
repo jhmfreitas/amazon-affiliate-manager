@@ -138,6 +138,27 @@ def load_products():
 
 # ── 2. Amazon BSR scraper ────────────────────────────────────
 
+def extract_current_price(soup):
+    selectors = [
+        "#corePriceDisplay_desktop_feature_div .priceToPay .a-price:not(.a-text-price) .a-offscreen",
+        "#corePrice_desktop .priceToPay .a-price:not(.a-text-price) .a-offscreen",
+        "#apex_desktop .priceToPay .a-price:not(.a-text-price) .a-offscreen",
+        "#buybox .a-price:not(.a-text-price) .a-offscreen",
+        ".priceToPay .a-offscreen",
+        "#priceblock_dealprice",
+        "#priceblock_ourprice",
+        "span.a-price:not(.a-text-price) .a-offscreen",
+    ]
+    for selector in selectors:
+        for price_tag in soup.select(selector):
+            if "a-text-price" in price_tag.get("class", []):
+                continue
+            match = re.search(r"£\s*([\d,]+(?:\.\d{1,2})?)", price_tag.get_text(" ", strip=True))
+            if match:
+                return float(match.group(1).replace(",", ""))
+    return None
+
+
 def get_amazon_signals(asin, session=None):
     """Fetch BSR rank, price, and availability from Amazon."""
     url = f"https://www.amazon.co.uk/dp/{asin}"
@@ -165,13 +186,8 @@ def get_amazon_signals(asin, session=None):
                 if out_of_stock and "currently unavailable" in out_of_stock.get_text().lower():
                     signals["available"] = False
                 
-                # 2. Price
-                price_span = soup.select_one(".a-price .a-offscreen") or soup.select_one(".a-price-whole")
-                if price_span:
-                    try:
-                        price_text = re.sub(r"[^\d.]", "", price_span.get_text())
-                        if price_text: signals["price"] = float(price_text)
-                    except: pass
+                # 2. Current GBP offer price, excluding struck-through list prices.
+                signals["price"] = extract_current_price(soup)
 
                 # 3. BSR extraction (Amazon UK format)
                 # UK pages use table.prodDetTable with format: "6,032 in Home & Kitchen" (no # symbol)
@@ -607,7 +623,7 @@ def score_all_products(products_data, signals):
 
 # ── 6. Save scores to Supabase ───────────────────────────────
 
-def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_delta, saves, save_delta, keywords, active=None, pause_reason=None):
+def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_delta, saves, save_delta, keywords, active=None, pause_reason=None, price=None):
     payload = {
         "score":                    score,
         "score_reason":             reason,
@@ -623,6 +639,8 @@ def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_del
     }
     if active is not None:
         payload["active"] = active
+    if price is not None and price > 0:
+        payload["price"] = round(float(price), 2)
     if pause_reason:
         payload["pause_reason"] = pause_reason
     elif active:  # If re-activated, clear the pause reason
@@ -789,7 +807,7 @@ if __name__ == "__main__":
             "save_delta":      save_delta,
             "pin_count":       pin_count,
             "commission":      commission,
-            "price":           p.get("price", 0),
+            "price":           price,
             "category":        p.get("category", "unknown"),
             "keywords":        keywords,
             "active_status":   active_status,
@@ -800,7 +818,7 @@ if __name__ == "__main__":
             "asin":              p["asin"],
             "name":              p["name"],
             "category":          p["category"],
-            "price":             p.get("price", 0),
+            "price":             price,
             "total_impressions": total_imp,
             "total_clicks":      total_clk,
             "total_saves":       total_sav,
@@ -838,7 +856,8 @@ if __name__ == "__main__":
             save_delta   = sig.get("save_delta", 0),
             keywords     = sig.get("keywords", []),
             active       = sig.get("active_status"),
-            pause_reason = sig.get("pause_reason")
+            pause_reason = sig.get("pause_reason"),
+            price        = sig.get("price")
         )
         status = "⏸️ PAUSED" if is_paused else "✅"
         print(f"  {status} {asin} → {s['score']}/100 — {s['reason']}")
