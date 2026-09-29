@@ -822,6 +822,37 @@
       margin-bottom: 12px;
     }
 
+    .product-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: -8px 0 16px;
+    }
+
+    .product-filter-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--muted);
+      font: 500 12px 'DM Sans', sans-serif;
+      cursor: pointer;
+    }
+
+    .product-filter-button[aria-pressed="true"] {
+      border-color: var(--blue-bd);
+      background: var(--blue-bg);
+      color: var(--blue);
+    }
+
+    .product-filter-count {
+      font: 11px 'DM Mono', monospace;
+      opacity: 0.8;
+    }
+
     .action-groups {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
@@ -941,6 +972,23 @@
       padding: 10px 0;
       color: var(--faint);
       font-size: 12px;
+    }
+
+    .performance-breakdowns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .performance-breakdowns > div {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    @media (max-width: 1100px) {
+      .performance-breakdowns {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
 
     .signal {
@@ -1278,6 +1326,20 @@
           </div>
           <button class="btn-refresh" onclick="loadAllProducts()">
             <span id="products-refresh-icon">↻</span> Refresh
+          </button>
+        </div>
+        <div class="product-filter-bar" role="group" aria-label="Filter products by status">
+          <button type="button" class="product-filter-button" data-product-filter="active"
+            aria-pressed="true" onclick="setProductFilter('active')">
+            Active <span class="product-filter-count" id="product-count-active">0</span>
+          </button>
+          <button type="button" class="product-filter-button" data-product-filter="paused"
+            aria-pressed="false" onclick="setProductFilter('paused')">
+            Paused <span class="product-filter-count" id="product-count-paused">0</span>
+          </button>
+          <button type="button" class="product-filter-button" data-product-filter="all"
+            aria-pressed="false" onclick="setProductFilter('all')">
+            All <span class="product-filter-count" id="product-count-all">0</span>
           </button>
         </div>
         <div id="product-list">
@@ -2195,6 +2257,12 @@
     // ── Load all products (full detail) ─────────────────────────
 
     let allProducts = [];
+    let productFilter = 'active';
+
+    function setProductFilter(filter) {
+      productFilter = filter;
+      renderProducts();
+    }
 
     async function loadAllProducts() {
       document.getElementById('products-refresh-icon').innerHTML =
@@ -2693,7 +2761,7 @@
     ${actionQueueHtml}
 
     <!-- Breakdown Grid -->
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <div class="performance-breakdowns">
       <!-- Templates -->
       <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px;">
         <h3 style="font-size:15px; font-weight:600; margin-bottom:16px;">Template Performance</h3>
@@ -2726,6 +2794,16 @@
 
     function renderProducts() {
       const list = document.getElementById('product-list');
+      const activeCount = allProducts.filter(product => product.active).length;
+      const pausedCount = allProducts.length - activeCount;
+      const counts = { active: activeCount, paused: pausedCount, all: allProducts.length };
+      document.querySelectorAll('[data-product-filter]').forEach(button => {
+        const filter = button.dataset.productFilter;
+        button.setAttribute('aria-pressed', String(filter === productFilter));
+        const count = document.getElementById(`product-count-${filter}`);
+        if (count) count.textContent = counts[filter].toLocaleString();
+      });
+
       if (!allProducts.length) {
         list.innerHTML = `<div class="empty">
       No products yet. Run <code>score_products.py</code> or add rows to
@@ -2734,9 +2812,19 @@
         return;
       }
 
-      const topScore = Math.max(...allProducts.map(p => p.score || 0));
+      const visibleProducts = productFilter === 'all'
+        ? allProducts
+        : allProducts.filter(product => productFilter === 'active' ? product.active : !product.active);
+      if (!visibleProducts.length) {
+        const otherFilter = productFilter === 'active' ? 'paused' : 'active';
+        const otherLabel = otherFilter === 'active' ? 'active' : 'paused';
+        list.innerHTML = `<div class="empty">No ${productFilter} products. <button class="btn-small" onclick="setProductFilter('${otherFilter}')">Show ${otherLabel}</button></div>`;
+        return;
+      }
 
-      list.innerHTML = allProducts.map((p, i) => {
+      const topScore = Math.max(...visibleProducts.map(p => p.score || 0));
+
+      list.innerHTML = visibleProducts.map((p, i) => {
         const isTop = p.score === topScore && p.active;
         const trendCls = p.trend_dir === 'rising' ? 'trend-rising'
           : p.trend_dir === 'falling' ? 'trend-falling'
