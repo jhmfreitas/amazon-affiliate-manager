@@ -38,3 +38,11 @@ are visible as valid GBP offers on Amazon UK product pages. Manual runs start in
 preview mode by default; set `dry_run` to `false` to apply the reported changes.
 The workflow needs only `SUPABASE_URL` and `SUPABASE_KEY`, not Creators API
 credentials.
+
+## Product retirement
+
+Run `migrations/20260929_product_retention.sql` once in Supabase before enabling
+`retire_products.yml`. The workflow retires products that have been paused for
+45 days, cancels their unposted pins, and keeps them in the Retired dashboard
+view for 180 days. Once that retention period ends, it permanently removes the
+retired product and its local pins. Manual runs start as a preview.

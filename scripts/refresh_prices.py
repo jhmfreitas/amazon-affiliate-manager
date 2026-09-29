@@ -28,12 +28,16 @@ BLOCK_MARKERS = (
     "to discuss automated access",
     "sorry, we just need to make sure",
     "enter the characters you see below",
+    "type the characters you see in this image",
     "/errors/validatecaptcha",
     "robot check",
+    "automated access",
 )
 
 PRICE_SELECTORS = (
     "#corePriceDisplay_desktop_feature_div .priceToPay .a-price:not(.a-text-price) .a-offscreen",
+    "#corePriceDisplay_desktop_feature_div span.a-price:not(.a-text-price) .a-offscreen",
+    "#corePrice_feature_div span.a-price:not(.a-text-price) .a-offscreen",
     "#corePrice_desktop .priceToPay .a-price:not(.a-text-price) .a-offscreen",
     "#apex_desktop .priceToPay .a-price:not(.a-text-price) .a-offscreen",
     "#buybox .a-price:not(.a-text-price) .a-offscreen",
@@ -82,10 +86,18 @@ def fetch_current_price(asin, session):
                 log.warning("Amazon blocked price refresh for %s (attempt %s/%s)", asin, attempt, MAX_RETRIES)
             else:
                 response.raise_for_status()
-                price = extract_current_gbp_price(BeautifulSoup(response.text, "html.parser"))
+                soup = BeautifulSoup(response.text, "html.parser")
+                price = extract_current_gbp_price(soup)
                 if price is not None:
                     return price
-                log.info("No GBP offer price found for %s (attempt %s/%s)", asin, attempt, MAX_RETRIES)
+                foreign = re.search(r"(?:EUR|€|\$)\s*[\d.]+", response.text)
+                if foreign:
+                    log.info(
+                        "No GBP offer price found for %s (detected non-GBP price '%s') (attempt %s/%s)",
+                        asin, foreign.group(0), attempt, MAX_RETRIES
+                    )
+                else:
+                    log.info("No GBP offer price found for %s (attempt %s/%s)", asin, attempt, MAX_RETRIES)
         except requests.RequestException as error:
             log.warning("Price refresh request failed for %s (attempt %s/%s): %s", asin, attempt, MAX_RETRIES, error)
 
@@ -115,7 +127,10 @@ def stored_price_matches(stored_price, current_price):
 def refresh_prices(products, dry_run):
     session = requests.Session()
     session.headers.update(random_headers())
-    session.cookies.update(get_amazon_cookies())
+    cookies = get_amazon_cookies()
+    session.cookies.update(cookies)
+    for k, v in cookies.items():
+        session.cookies.set(k, v, domain=".amazon.co.uk")
 
     changed = unchanged = missing = 0
     for index, product in enumerate(products, start=1):

@@ -639,6 +639,10 @@ def save_score(product_id, score, reason, bsr, trend_score, trend_dir, trend_del
     }
     if active is not None:
         payload["active"] = active
+        if active:
+            payload["paused_at"] = None
+        else:
+            payload["paused_at"] = datetime.now(timezone.utc).isoformat()
     if price is not None and price > 0:
         payload["price"] = round(float(price), 2)
     if pause_reason:

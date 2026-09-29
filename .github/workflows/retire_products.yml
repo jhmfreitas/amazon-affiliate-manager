@@ -1,0 +1,52 @@
+name: Retire stale products
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview changes only (true or false)'
+        required: false
+        default: 'true'
+      retire_after_days:
+        description: 'Paused days before retirement'
+        required: false
+        default: '45'
+      purge_after_days:
+        description: 'Retired days before permanent local cleanup'
+        required: false
+        default: '180'
+      purge_retired:
+        description: 'Permanently remove expired retired products and local pins (true or false)'
+        required: false
+        default: 'true'
+  schedule:
+    - cron: "0 6 * * 4"
+
+jobs:
+  retire-products:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify retirement rules
+        run: python -m unittest tests/test_retire_products.py
+
+      - name: Retire and clean up products
+        env:
+          RETIRE_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
+          RETIRE_AFTER_DAYS: ${{ github.event.inputs.retire_after_days || '45' }}
+          PURGE_AFTER_DAYS: ${{ github.event.inputs.purge_after_days || '180' }}
+          PURGE_RETIRED: ${{ github.event_name == 'schedule' && '1' || (github.event.inputs.purge_retired == 'true' && '1' || '0') }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/retire_products.py

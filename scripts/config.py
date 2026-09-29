@@ -125,7 +125,8 @@ def get_amazon_cookies():
     """Return cookies that force Amazon to display GBP prices."""
     return {
         "i18n-prefs": "GBP",
-        "lc-acbuk": "en_GB"
+        "lc-acbuk": "en_GB",
+        "sp-cdn": '"L5Z9:GB"',
     }
 
 # ── Supabase helpers ───────────────────────────────────────
