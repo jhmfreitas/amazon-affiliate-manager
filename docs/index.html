@@ -1,1285 +1,1814 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Pin review</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<style>
-  :root {
-    --bg:        #f7f6f2;
-    --surface:   #ffffff;
-    --border:    #e4e2db;
-    --border2:   #d0cec6;
-    --text:      #1a1917;
-    --muted:     #888580;
-    --faint:     #c4c2bb;
-    --green:     #1a6b4a;
-    --green-bg:  #eaf5ee;
-    --green-bd:  #b6dfc6;
-    --amber:     #92520a;
-    --amber-bg:  #fef3e2;
-    --amber-bd:  #f5d49a;
-    --red:       #b91c1c;
-    --red-bg:    #fef2f2;
-    --red-bd:    #fecaca;
-    --blue:      #1d4ed8;
-    --blue-bg:   #eff6ff;
-    --blue-bd:   #bfdbfe;
-    --accent:    #e60023;
-    --radius:    10px;
-    --radius-lg: 14px;
-  }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pin review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --surface: #ffffff;
+      --border: #e4e2db;
+      --border2: #d0cec6;
+      --text: #1a1917;
+      --muted: #888580;
+      --faint: #c4c2bb;
+      --green: #1a6b4a;
+      --green-bg: #eaf5ee;
+      --green-bd: #b6dfc6;
+      --amber: #92520a;
+      --amber-bg: #fef3e2;
+      --amber-bd: #f5d49a;
+      --red: #b91c1c;
+      --red-bg: #fef2f2;
+      --red-bd: #fecaca;
+      --blue: #1d4ed8;
+      --blue-bg: #eff6ff;
+      --blue-bd: #bfdbfe;
+      --accent: #e60023;
+      --radius: 10px;
+      --radius-lg: 14px;
+    }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  body {
-    font-family: 'DM Sans', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-  }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
 
-  /* ── Login screen ── */
-  .login-screen {
-    min-height: 100vh;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .login-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 2.5rem 2rem;
-    width: 100%; max-width: 360px; text-align: center;
-  }
-  .login-logo {
-    font-family: 'DM Mono', monospace;
-    font-size: 13px; font-weight: 500;
-    color: var(--accent); letter-spacing: 0.04em;
-    margin-bottom: 1.5rem;
-  }
-  .login-title {
-    font-size: 20px; font-weight: 600;
-    margin-bottom: 6px;
-  }
-  .login-sub {
-    font-size: 13px; color: var(--muted);
-    margin-bottom: 2rem; line-height: 1.5;
-  }
-  .btn-google {
-    display: flex; align-items: center; justify-content: center;
-    gap: 10px; width: 100%;
-    background: var(--surface); border: 1px solid var(--border2);
-    border-radius: var(--radius); padding: 11px 16px;
-    font-family: 'DM Sans', sans-serif; font-size: 14px;
-    font-weight: 500; cursor: pointer; color: var(--text);
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .btn-google:hover { background: var(--bg); border-color: var(--border2); }
-  .btn-google svg { flex-shrink: 0; }
-  .login-note {
-    font-size: 11px; color: var(--faint);
-    margin-top: 1.5rem; line-height: 1.6;
-  }
+    /* ── Login screen ── */
+    .login-screen {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-  /* ── App (hidden until logged in) ── */
-  .app { display: none; }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+    }
 
-  /* ── Sidebar ── */
-  .sidebar {
-    position: fixed; top: 0; left: 0; bottom: 0;
-    width: 220px; background: var(--surface);
-    border-right: 1px solid var(--border);
-    padding: 1.5rem 1rem;
-    display: flex; flex-direction: column; gap: 4px;
-    z-index: 100;
-  }
-  .logo {
-    font-family: 'DM Mono', monospace;
-    font-size: 13px; font-weight: 500;
-    color: var(--accent); letter-spacing: 0.04em;
-    padding: 0 8px; margin-bottom: 1.5rem;
-  }
-  .nav-label {
-    font-size: 10px; font-weight: 600;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--faint); padding: 0 8px; margin: 12px 0 4px;
-  }
-  .nav-btn {
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 10px; border-radius: var(--radius);
-    border: none; background: transparent;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 13px; color: var(--muted);
-    cursor: pointer; text-align: left; width: 100%;
-    transition: background 0.1s, color 0.1s;
-  }
-  .nav-btn:hover { background: var(--bg); color: var(--text); }
-  .nav-btn.active { background: var(--bg); color: var(--text); font-weight: 500; }
-  .nav-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .dot-all      { background: var(--text); }
-  .dot-pending  { background: #f59e0b; }
-  .dot-approved { background: #22c55e; }
-  .dot-posted   { background: var(--faint); }
-  .nav-count {
-    margin-left: auto; font-family: 'DM Mono', monospace;
-    font-size: 11px; color: var(--faint);
-  }
+    .login-logo {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      margin-bottom: 1.5rem;
+    }
 
-  /* User info at bottom of sidebar */
-  .sidebar-footer {
-    margin-top: auto; padding: 10px 8px 0;
-    border-top: 1px solid var(--border);
-  }
-  .user-row {
-    display: flex; align-items: center; gap: 8px;
-    margin-bottom: 8px;
-  }
-  .user-avatar {
-    width: 28px; height: 28px; border-radius: 50%;
-    background: var(--blue-bg); border: 1px solid var(--blue-bd);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 600; color: var(--blue);
-    flex-shrink: 0; overflow: hidden;
-  }
-  .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
-  .user-email {
-    font-size: 11px; color: var(--muted);
-    white-space: nowrap; overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .btn-signout {
-    width: 100%; background: transparent;
-    border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 6px; font-family: 'DM Sans', sans-serif;
-    font-size: 12px; color: var(--muted); cursor: pointer;
-    text-align: center;
-  }
-  .btn-signout:hover { color: var(--red); border-color: var(--red-bd); }
+    .login-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
 
-  /* ── Main ── */
-  .main { margin-left: 220px; padding: 2rem 2.5rem; max-width: 900px; }
+    .login-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 2rem;
+      line-height: 1.5;
+    }
 
-  .page-header {
-    display: flex; justify-content: space-between;
-    align-items: flex-start; margin-bottom: 1.75rem;
-  }
-  .page-title { font-size: 22px; font-weight: 600; }
-  .page-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
-  .btn-refresh {
-    display: flex; align-items: center; gap: 6px;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 7px 14px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px;
-    color: var(--muted); cursor: pointer;
-  }
-  .btn-refresh:hover { color: var(--text); border-color: var(--border2); }
+    .btn-google {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 11px 16px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--text);
+      transition: border-color 0.15s, background 0.15s;
+    }
 
-  /* ── Stats ── */
-  .stats {
-    display: grid; grid-template-columns: repeat(4, 1fr);
-    gap: 10px; margin-bottom: 2rem;
-  }
-  .stat {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 14px 18px;
-  }
-  .stat-label {
-    font-size: 11px; color: var(--muted); margin-bottom: 6px;
-    font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .stat-val {
-    font-size: 26px; font-weight: 600;
-    font-family: 'DM Mono', monospace;
-  }
+    .btn-google:hover {
+      background: var(--bg);
+      border-color: var(--border2);
+    }
 
-  /* ── Pin card ── */
-  .pin-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); margin-bottom: 14px;
-    overflow: hidden; transition: border-color 0.15s;
-  }
-  .pin-card:hover { border-color: var(--border2); }
-  .pin-inner {
-    display: grid; grid-template-columns: 175px 1fr;
-    min-height: 280px;
-  }
+    .btn-google svg {
+      flex-shrink: 0;
+    }
 
-  /* Image panel */
-  .img-panel {
-    background: #ffffff; position: relative;
-    border-right: 1px solid var(--border); overflow: hidden;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .pin-img {
-    max-width: 100%; max-height: 100%;
-    object-fit: contain; display: block;
-  }
-  .img-hover {
-    position: absolute; inset: 0; background: rgba(0,0,0,0.55);
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 7px;
-    opacity: 0; transition: opacity 0.15s;
-  }
-  .img-panel:hover .img-hover { opacity: 1; }
-  .img-action-btn {
-    background: white; border: none; border-radius: 8px;
-    padding: 7px 0; font-family: 'DM Sans', sans-serif;
-    font-size: 12px; font-weight: 500; cursor: pointer;
-    width: 140px; text-align: center; color: #111;
-  }
-  .img-action-btn:hover { background: #f0f0f0; }
+    .login-note {
+      font-size: 11px;
+      color: var(--faint);
+      margin-top: 1.5rem;
+      line-height: 1.6;
+    }
 
-  /* Content panel */
-  .content-panel {
-    padding: 16px 18px; display: flex;
-    flex-direction: column; gap: 12px;
-  }
-  .pin-top {
-    display: flex; justify-content: space-between;
-    align-items: center; gap: 10px;
-  }
-  .badge {
-    font-size: 11px; font-weight: 600; padding: 3px 10px;
-    border-radius: 99px; letter-spacing: 0.02em;
-  }
-  .badge-pending  { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd); }
-  .badge-approved { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-bd); }
-  .badge-posted   { background: var(--bg);         color: var(--muted);  border: 1px solid var(--border); }
-  .score-chip {
-    font-family: 'DM Mono', monospace; font-size: 11px;
-    color: var(--muted); background: var(--bg);
-    border: 1px solid var(--border); padding: 2px 9px; border-radius: 99px;
-  }
-  .field-label {
-    font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.08em; color: var(--faint); margin-bottom: 3px;
-  }
-  .field-title { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.4; }
-  .field-desc  { font-size: 12px; color: var(--muted); line-height: 1.65; }
-  .tags-wrap   { display: flex; flex-wrap: wrap; gap: 5px; }
-  .tag {
-    background: var(--bg); color: var(--muted); font-size: 11px;
-    padding: 3px 8px; border-radius: 99px; border: 1px solid var(--border);
-  }
+    /* ── App (hidden until logged in) ── */
+    .app {
+      display: none;
+    }
 
-  /* Edit inputs */
-  .edit-input, .edit-textarea {
-    width: 100%; font-size: 13px; padding: 7px 10px;
-    border-radius: 8px; border: 1px solid var(--border2);
-    background: var(--bg); color: var(--text);
-    font-family: 'DM Sans', sans-serif; outline: none;
-    transition: border-color 0.15s;
-  }
-  .edit-input:focus, .edit-textarea:focus {
-    border-color: var(--blue); background: var(--surface);
-  }
-  .edit-textarea { min-height: 85px; resize: vertical; }
-  .search-row { display: flex; gap: 7px; }
-  .search-row .edit-input { flex: 1; min-width: 0; }
-  .btn-fetch {
-    background: var(--blue-bg); color: var(--blue);
-    border: 1px solid var(--blue-bd); border-radius: 8px;
-    padding: 7px 13px; font-family: 'DM Sans', sans-serif;
-    font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap;
-  }
-  .btn-fetch:hover { background: var(--blue-bd); }
+    /* ── Sidebar ── */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 100;
+    }
 
-  /* Actions */
-  .actions {
-    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-    padding-top: 10px; border-top: 1px solid var(--border); margin-top: auto;
-  }
-  .btn-approve {
-    background: var(--accent); color: white; border: none;
-    border-radius: var(--radius); padding: 7px 18px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px;
-    font-weight: 500; cursor: pointer; margin-left: auto;
-    transition: opacity 0.1s;
-  }
-  .btn-approve:hover { opacity: 0.88; }
-  .btn-secondary {
-    background: transparent; border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 7px 14px;
-    font-family: 'DM Sans', sans-serif; font-size: 12px;
-    cursor: pointer; color: var(--muted);
-  }
-  .btn-secondary:hover { border-color: var(--border2); color: var(--text); }
-  .btn-danger {
-    background: transparent; border: 1px solid var(--red-bd);
-    border-radius: var(--radius); padding: 7px 14px;
-    font-family: 'DM Sans', sans-serif; font-size: 12px;
-    cursor: pointer; color: var(--red);
-  }
-  .btn-danger:hover { background: var(--red-bg); }
-  .btn-save {
-    background: var(--blue-bg); color: var(--blue);
-    border: 1px solid var(--blue-bd); border-radius: var(--radius);
-    padding: 7px 16px; font-family: 'DM Sans', sans-serif;
-    font-size: 12px; font-weight: 500; cursor: pointer;
-  }
-  .btn-save:hover { background: var(--blue-bd); }
+    .logo {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      padding: 0 8px;
+      margin-bottom: 1.5rem;
+    }
 
-  /* Toast */
-  .toast {
-    position: fixed; bottom: 24px; left: 50%;
-    transform: translateX(-50%);
-    background: var(--text); color: var(--bg);
-    border-radius: var(--radius); padding: 10px 20px;
-    font-size: 13px; font-weight: 500; display: none;
-    z-index: 999; white-space: nowrap;
-    font-family: 'DM Mono', monospace;
-  }
+    .nav-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--faint);
+      padding: 0 8px;
+      margin: 12px 0 4px;
+    }
 
-  /* Loading / empty */
-  .loading {
-    text-align: center; padding: 4rem 2rem;
-    color: var(--muted); font-size: 14px;
-    font-family: 'DM Mono', monospace;
-  }
-  .empty {
-    text-align: center; padding: 3rem; color: var(--muted);
-    font-size: 13px; border: 1px dashed var(--border);
-    border-radius: var(--radius-lg);
-  }
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: var(--radius);
+      border: none;
+      background: transparent;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      transition: background 0.1s, color 0.1s;
+    }
 
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .spinner {
-    display: inline-block; width: 14px; height: 14px;
-    border: 2px solid var(--border); border-top-color: var(--muted);
-    border-radius: 50%; animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-  }
+    .nav-btn:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
 
-  @media (max-width: 640px) {
-    .sidebar { display: none; }
-    .main { margin-left: 0; padding: 1rem; }
-    .pin-inner { grid-template-columns: 1fr; }
-    .stats { grid-template-columns: repeat(2, 1fr); }
-    .pin-img { min-height: 200px; }
-    .img-hover { opacity: 1; background: rgba(0,0,0,0.3);
-      justify-content: flex-end; padding-bottom: 10px; }
-  }
+    .nav-btn.active {
+      background: var(--bg);
+      color: var(--text);
+      font-weight: 500;
+    }
 
-  /* ── Products section ── */
-  .section-hidden { display: none; }
-  .product-grid { display: flex; flex-direction: column; gap: 12px; }
-  .product-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 0;
-    transition: border-color 0.15s; overflow: hidden;
-    display: grid; grid-template-columns: 120px 1fr;
-  }
-  .product-card:hover { border-color: var(--border2); }
-  .product-img-side {
-    background: var(--bg); border-right: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center;
-    padding: 10px;
-  }
-  .product-img-side img {
-    max-width: 100%; max-height: 140px; border-radius: 6px;
-    object-fit: contain; background: white;
-  }
-  .product-main-side { padding: 18px 20px; }
-  .product-card-top {
-    display: flex; justify-content: space-between;
-    align-items: flex-start; gap: 12px; margin-bottom: 12px;
-  }
-  .product-name { font-size: 15px; font-weight: 600; line-height: 1.3; }
-  .product-asin {
-    font-family: 'DM Mono', monospace; font-size: 11px;
-    color: var(--faint); margin-top: 3px;
-  }
-  .product-score-big {
-    font-family: 'DM Mono', monospace; font-size: 28px;
-    font-weight: 600; color: var(--green); line-height: 1;
-    flex-shrink: 0;
-  }
-  .product-score-label {
-    font-size: 10px; color: var(--muted); text-align: right;
-    font-family: 'DM Mono', monospace;
-  }
-  .product-signals {
-    display: grid; grid-template-columns: repeat(4, 1fr);
-    gap: 8px; margin-bottom: 12px;
-  }
-  .signal {
-    background: var(--bg); border-radius: 8px;
-    padding: 10px 12px;
-  }
-  .signal-label {
-    font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--faint);
-    margin-bottom: 4px; font-family: 'DM Mono', monospace;
-  }
-  .signal-val {
-    font-size: 14px; font-weight: 600;
-    font-family: 'DM Mono', monospace;
-  }
-  .signal-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
-  .trend-rising  { color: var(--green); }
-  .trend-falling { color: var(--red); }
-  .trend-stable  { color: var(--muted); }
-  .product-footer {
-    display: flex; align-items: center; gap: 10px;
-    flex-wrap: wrap; padding-top: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .product-reason {
-    font-size: 12px; color: var(--muted); flex: 1;
-    font-style: italic; line-height: 1.5;
-  }
-  .product-keywords {
-    display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;
-  }
-  .keyword-tag {
-    font-size: 10px; background: var(--blue-bg); color: var(--blue);
-    padding: 2px 8px; border-radius: 4px; font-weight: 500;
-    border: 1px solid var(--blue-bd);
-  }
-  .bsr-tag {
-    font-size: 10px; background: var(--amber-bg); color: var(--amber);
-    padding: 2px 8px; border-radius: 4px; font-weight: 600;
-    border: 1px solid var(--amber-bd); display: inline-block;
-    margin-bottom: 8px;
-  }
-  .product-link-row {
-    display: flex; align-items: center; gap: 8px;
-    margin-bottom: 12px;
-  }
-  .product-link-row input {
-    flex: 1; font-size: 12px; padding: 6px 10px;
-    border-radius: 8px; border: 1px solid var(--border2);
-    background: var(--bg); color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-  }
-  .active-badge {
-    font-size: 11px; font-weight: 600; padding: 3px 10px;
-    border-radius: 99px;
-    background: var(--green-bg); color: var(--green);
-    border: 1px solid var(--green-bd);
-  }
-  .paused-badge {
-    font-size: 11px; font-weight: 600; padding: 3px 10px;
-    border-radius: 99px;
-    background: var(--bg); color: var(--muted);
-    border: 1px solid var(--border);
-  }
-  .top-badge {
-    font-size: 11px; font-weight: 600; padding: 3px 10px;
-    border-radius: 99px;
-    background: var(--amber-bg); color: var(--amber);
-    border: 1px solid var(--amber-bd);
-  }
-  .btn-small {
-    background: transparent; border: 1px solid var(--border);
-    border-radius: 8px; padding: 5px 12px;
-    font-family: 'DM Sans', sans-serif; font-size: 12px;
-    cursor: pointer; color: var(--muted);
-  }
-  .btn-small:hover { border-color: var(--border2); color: var(--text); }
-  .btn-small-danger {
-    background: transparent; border: 1px solid var(--red-bd);
-    border-radius: 8px; padding: 5px 12px;
-    font-family: 'DM Sans', sans-serif; font-size: 12px;
-    cursor: pointer; color: var(--red);
-  }
-  .btn-small-danger:hover { background: var(--red-bg); }
-  .btn-primary-small {
-    background: var(--accent); color: white; border: none;
-    border-radius: 8px; padding: 5px 14px;
-    font-family: 'DM Sans', sans-serif; font-size: 12px;
-    font-weight: 500; cursor: pointer;
-  }
-  @media (max-width: 640px) {
-    .product-card { grid-template-columns: 1fr; }
-    .product-img-side { border-right: none; border-bottom: 1px solid var(--border); }
-    .product-signals { grid-template-columns: repeat(2, 1fr); }
-  }
+    .nav-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
 
-</style>
+    .dot-all {
+      background: var(--text);
+    }
+
+    .dot-pending {
+      background: #f59e0b;
+    }
+
+    .dot-approved {
+      background: #22c55e;
+    }
+
+    .dot-posted {
+      background: var(--faint);
+    }
+
+    .nav-count {
+      margin-left: auto;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--faint);
+    }
+
+    /* User info at bottom of sidebar */
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 10px 8px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--blue-bg);
+      border: 1px solid var(--blue-bd);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--blue);
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .user-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .user-email {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-signout {
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .btn-signout:hover {
+      color: var(--red);
+      border-color: var(--red-bd);
+    }
+
+    /* ── Main ── */
+    .main {
+      margin-left: 220px;
+      padding: 2rem 2.5rem;
+      max-width: 900px;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1.75rem;
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    .page-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .btn-refresh {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .btn-refresh:hover {
+      color: var(--text);
+      border-color: var(--border2);
+    }
+
+    /* ── Stats ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 2rem;
+    }
+
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 14px 18px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-val {
+      font-size: 26px;
+      font-weight: 600;
+      font-family: 'DM Mono', monospace;
+    }
+
+    /* ── Pin card ── */
+    .pin-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      margin-bottom: 14px;
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+
+    .pin-card:hover {
+      border-color: var(--border2);
+    }
+
+    .pin-inner {
+      display: grid;
+      grid-template-columns: 175px 1fr;
+      min-height: 280px;
+    }
+
+    /* Image panel */
+    .img-panel {
+      background: #ffffff;
+      position: relative;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pin-img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .img-hover {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .img-panel:hover .img-hover {
+      opacity: 1;
+    }
+
+    .img-action-btn {
+      background: white;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 0;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      width: 140px;
+      text-align: center;
+      color: #111;
+    }
+
+    .img-action-btn:hover {
+      background: #f0f0f0;
+    }
+
+    /* Content panel */
+    .content-panel {
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .pin-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 99px;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-pending {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid var(--amber-bd);
+    }
+
+    .badge-approved {
+      background: var(--green-bg);
+      color: var(--green);
+      border: 1px solid var(--green-bd);
+    }
+
+    .badge-posted {
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .score-chip {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 2px 9px;
+      border-radius: 99px;
+    }
+
+    .field-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--faint);
+      margin-bottom: 3px;
+    }
+
+    .field-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .field-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .tags-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .tag {
+      background: var(--bg);
+      color: var(--muted);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+    }
+
+    /* Edit inputs */
+    .edit-input,
+    .edit-textarea {
+      width: 100%;
+      font-size: 13px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .edit-input:focus,
+    .edit-textarea:focus {
+      border-color: var(--blue);
+      background: var(--surface);
+    }
+
+    .edit-textarea {
+      min-height: 85px;
+      resize: vertical;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 7px;
+    }
+
+    .search-row .edit-input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .btn-fetch {
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid var(--blue-bd);
+      border-radius: 8px;
+      padding: 7px 13px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-fetch:hover {
+      background: var(--blue-bd);
+    }
+
+    /* Actions */
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      margin-top: auto;
+    }
+
+    .btn-approve {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 7px 18px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-left: auto;
+      transition: opacity 0.1s;
+    }
+
+    .btn-approve:hover {
+      opacity: 0.88;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--muted);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--border2);
+      color: var(--text);
+    }
+
+    .btn-danger {
+      background: transparent;
+      border: 1px solid var(--red-bd);
+      border-radius: var(--radius);
+      padding: 7px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--red);
+    }
+
+    .btn-danger:hover {
+      background: var(--red-bg);
+    }
+
+    .btn-save {
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid var(--blue-bd);
+      border-radius: var(--radius);
+      padding: 7px 16px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .btn-save:hover {
+      background: var(--blue-bd);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--text);
+      color: var(--bg);
+      border-radius: var(--radius);
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      display: none;
+      z-index: 999;
+      white-space: nowrap;
+      font-family: 'DM Mono', monospace;
+    }
+
+    /* Loading / empty */
+    .loading {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--muted);
+      font-size: 14px;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 3rem;
+      color: var(--muted);
+      font-size: 13px;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-lg);
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--muted);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
+
+    @media (max-width: 640px) {
+      .sidebar {
+        display: none;
+      }
+
+      .main {
+        margin-left: 0;
+        padding: 1rem;
+      }
+
+      .pin-inner {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .pin-img {
+        min-height: 200px;
+      }
+
+      .img-hover {
+        opacity: 1;
+        background: rgba(0, 0, 0, 0.3);
+        justify-content: flex-end;
+        padding-bottom: 10px;
+      }
+    }
+
+    /* ── Products section ── */
+    .section-hidden {
+      display: none;
+    }
+
+    .product-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .product-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 0;
+      transition: border-color 0.15s;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 120px 1fr;
+    }
+
+    .product-card:hover {
+      border-color: var(--border2);
+    }
+
+    .product-img-side {
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+
+    .product-img-side img {
+      max-width: 100%;
+      max-height: 140px;
+      border-radius: 6px;
+      object-fit: contain;
+      background: white;
+    }
+
+    .product-main-side {
+      padding: 18px 20px;
+    }
+
+    .product-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .product-name {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .product-asin {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--faint);
+      margin-top: 3px;
+    }
+
+    .product-score-big {
+      font-family: 'DM Mono', monospace;
+      font-size: 28px;
+      font-weight: 600;
+      color: var(--green);
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .product-score-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .product-signals {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .signal {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .signal-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--faint);
+      margin-bottom: 4px;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .signal-val {
+      font-size: 14px;
+      font-weight: 600;
+      font-family: 'DM Mono', monospace;
+    }
+
+    .signal-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .trend-rising {
+      color: var(--green);
+    }
+
+    .trend-falling {
+      color: var(--red);
+    }
+
+    .trend-stable {
+      color: var(--muted);
+    }
+
+    .product-footer {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .product-reason {
+      font-size: 12px;
+      color: var(--muted);
+      flex: 1;
+      font-style: italic;
+      line-height: 1.5;
+    }
+
+    .product-keywords {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+    }
+
+    .keyword-tag {
+      font-size: 10px;
+      background: var(--blue-bg);
+      color: var(--blue);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+      border: 1px solid var(--blue-bd);
+    }
+
+    .bsr-tag {
+      font-size: 10px;
+      background: var(--amber-bg);
+      color: var(--amber);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      border: 1px solid var(--amber-bd);
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+
+    .product-link-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .product-link-row input {
+      flex: 1;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .active-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 99px;
+      background: var(--green-bg);
+      color: var(--green);
+      border: 1px solid var(--green-bd);
+    }
+
+    .paused-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 99px;
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .top-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 99px;
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid var(--amber-bd);
+    }
+
+    .btn-small {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--muted);
+    }
+
+    .btn-small:hover {
+      border-color: var(--border2);
+      color: var(--text);
+    }
+
+    .btn-small-danger {
+      background: transparent;
+      border: 1px solid var(--red-bd);
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--red);
+    }
+
+    .btn-small-danger:hover {
+      background: var(--red-bg);
+    }
+
+    .btn-primary-small {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 5px 14px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    @media (max-width: 640px) {
+      .product-card {
+        grid-template-columns: 1fr;
+      }
+
+      .product-img-side {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .product-signals {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<!-- ══════════════════════════════════════════════
+  <!-- ══════════════════════════════════════════════
      CONFIGURATION — only edit these 2 values
      Supabase → Settings → API
      SUPABASE_ANON = your sb_publishable_... key
 ════════════════════════════════════════════════ -->
-<script>
-  const SUPABASE_URL  = "https://xptveknkjmunoyuvlkkq.supabase.co";
-  const SUPABASE_ANON = "sb_publishable_NkQ9KYw1lEBUR9WlPRS9Ng_tucXsTmY";
-</script>
-<!-- ══════════════════════════════════════════════ -->
+  <script>
+    const SUPABASE_URL = "https://xptveknkjmunoyuvlkkq.supabase.co";
+    const SUPABASE_ANON = "sb_publishable_NkQ9KYw1lEBUR9WlPRS9Ng_tucXsTmY";
+  </script>
+  <!-- ══════════════════════════════════════════════ -->
 
 
-<!-- ── Login screen ── -->
-<div class="login-screen" id="login-screen">
-  <div class="login-card">
-    <div class="login-logo">// pin-review</div>
-    <h1 class="login-title">Sign in</h1>
-    <p class="login-sub">This tool is private.<br>Sign in with the Google account you own this project with.</p>
-    <button class="btn-google" onclick="signIn()">
-      <svg width="18" height="18" viewBox="0 0 18 18">
-        <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
-        <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-        <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
-        <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
-      </svg>
-      Continue with Google
-    </button>
-    <p class="login-note">Only your authorised Google account can access this app.<br>All others will be redirected back here.</p>
+  <!-- ── Login screen ── -->
+  <div class="login-screen" id="login-screen">
+    <div class="login-card">
+      <div class="login-logo">// pin-review</div>
+      <h1 class="login-title">Sign in</h1>
+      <p class="login-sub">This tool is private.<br>Sign in with the Google account you own this project with.</p>
+      <button class="btn-google" onclick="signIn()">
+        <svg width="18" height="18" viewBox="0 0 18 18">
+          <path fill="#4285F4"
+            d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" />
+          <path fill="#34A853"
+            d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" />
+          <path fill="#FBBC05"
+            d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" />
+          <path fill="#EA4335"
+            d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z" />
+        </svg>
+        Continue with Google
+      </button>
+      <p class="login-note">Only your authorised Google account can access this app.<br>All others will be redirected
+        back here.</p>
+    </div>
   </div>
-</div>
 
 
-<!-- ── App (shown after login) ── -->
-<div class="app" id="app">
+  <!-- ── App (shown after login) ── -->
+  <div class="app" id="app">
 
-  <nav class="sidebar">
-    <div class="logo">// pin-review</div>
-    <div class="nav-label">Filter</div>
-    <button class="nav-btn active" onclick="setFilter('all', this)">
-      <span class="nav-dot dot-all"></span> All pins
-      <span class="nav-count" id="nc-all">0</span>
-    </button>
-    <button class="nav-btn" onclick="setFilter('pending', this)">
-      <span class="nav-dot dot-pending"></span> Pending
-      <span class="nav-count" id="nc-pending">0</span>
-    </button>
-    <button class="nav-btn" onclick="setFilter('approved', this)">
-      <span class="nav-dot dot-approved"></span> Approved
-      <span class="nav-count" id="nc-approved">0</span>
-    </button>
-    <button class="nav-btn" onclick="setFilter('posted', this)">
-      <span class="nav-dot dot-posted"></span> Posted
-      <span class="nav-count" id="nc-posted">0</span>
-    </button>
-
-    <div class="nav-label">Manage</div>
-    <button class="nav-btn" id="nav-products" onclick="showSection('products', this)">
-      <span class="nav-dot" style="background:var(--blue);"></span> Products
-      <span class="nav-count" id="nc-products">0</span>
-    </button>
-    <button class="nav-btn" id="nav-queue" onclick="showSection('queue', this)">
-      <span class="nav-dot" style="background:#8b5cf6;"></span> Post Queue
-    </button>
-    <button class="nav-btn" id="nav-performance" onclick="showSection('performance', this)">
-      <span class="nav-dot" style="background:var(--green);"></span> Performance
-    </button>
-
-    <div class="nav-label">Settings</div>
-    <button class="nav-btn" id="nav-pinterest" onclick="showSection('pinterest', this)">
-      <span class="nav-dot" style="background:var(--accent);"></span> Pinterest
-    </button>
-
-    <div class="sidebar-footer">
-      <div class="user-row">
-        <div class="user-avatar" id="user-avatar">?</div>
-        <span class="user-email" id="user-email">…</span>
-      </div>
-      <button class="btn-signout" onclick="signOut()">Sign out</button>
-    </div>
-  </nav>
-
-  <main class="main">
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Pin review</h1>
-        <p class="page-sub">Review, edit and approve pins before they go live</p>
-      </div>
-      <button class="btn-refresh" onclick="loadPins()">
-        <span id="refresh-icon">↻</span> Refresh
+    <nav class="sidebar">
+      <div class="logo">// pin-review</div>
+      <div class="nav-label">Filter</div>
+      <button class="nav-btn active" onclick="setFilter('all', this)">
+        <span class="nav-dot dot-all"></span> All pins
+        <span class="nav-count" id="nc-all">0</span>
       </button>
-    </div>
-
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-label">Total</div>
-        <div class="stat-val" id="s-total">–</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Pending</div>
-        <div class="stat-val" id="s-pending">–</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Approved</div>
-        <div class="stat-val" id="s-approved">–</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Posted</div>
-        <div class="stat-val" id="s-posted">–</div>
-      </div>
-    </div>
-
-    <div id="bulk-actions" style="display:none; padding: 12px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; align-items: center; gap: 14px;">
-      <input type="checkbox" id="select-all" onclick="toggleSelectAll(this.checked)" style="width: 16px; height: 16px; cursor: pointer;" />
-      <span style="font-size: 13px; font-weight: 500;"><span id="selected-count">0</span> selected</span>
-      <button class="btn-approve" onclick="bulkApprove()" style="margin-left: auto; padding: 6px 14px;">Approve Selected</button>
-      <button class="btn-danger" onclick="bulkRemove()" style="padding: 6px 14px;">Delete Selected</button>
-    </div>
-
-    <div id="pin-list">
-      <div class="loading"><span class="spinner"></span> Loading pins…</div>
-    </div>
-
-    <!-- ── Products section ── -->
-    <div id="products-section" class="section-hidden">
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Products</h1>
-          <p class="page-sub">Ranked by weekly score — top product gets pins generated</p>
-        </div>
-        <button class="btn-refresh" onclick="loadAllProducts()">
-          <span id="products-refresh-icon">↻</span> Refresh
-        </button>
-      </div>
-      <div id="product-list">
-        <div class="loading"><span class="spinner"></span> Loading products…</div>
-      </div>
-    </div>
-
-    <!-- ── Performance section ── -->
-    <div id="performance-section" class="section-hidden">
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Performance Dashboard</h1>
-          <p class="page-sub">Aggregated metrics across your posted pins</p>
-        </div>
-        <div style="display:flex; gap:12px; align-items:center;">
-          <input type="file" id="csv-upload" accept=".csv" style="display:none;" onchange="handleCSVUpload(event)">
-          <button class="btn-secondary" onclick="document.getElementById('csv-upload').click()">
-            Upload Amazon CSV
-          </button>
-          <button class="btn-refresh" onclick="renderPerformance()">
-            <span id="perf-refresh-icon">↻</span> Refresh
-          </button>
-        </div>
-      </div>
-      <div id="performance-content">
-        <div class="loading"><span class="spinner"></span> Calculating performance data…</div>
-      </div>
-    </div>
-
-    <!-- ── Queue section ── -->
-    <div id="queue-section" class="section-hidden">
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Post Queue</h1>
-          <p class="page-sub">Drag and drop to reorder approved pins. The top pin goes out next.</p>
-        </div>
-        <button class="btn-refresh" onclick="renderQueue()">
-          <span id="queue-refresh-icon">↻</span> Refresh
-        </button>
-      </div>
-      <div id="queue-list" style="display: flex; flex-direction: column; gap: 8px;">
-        <div class="loading"><span class="spinner"></span> Loading queue…</div>
-      </div>
-    </div>
-
-    <!-- ── Pinterest section ── -->
-    <div id="pinterest-section" class="section-hidden">
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Pinterest Integration</h1>
-          <p class="page-sub">Connect your account to enable automatic posting</p>
-        </div>
-      </div>
-      
-      <div class="stat" style="max-width: 400px; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px;">
-        <div class="stat-label">Connection Status</div>
-        <div id="pinterest-status" style="font-size: 18px; font-weight: 600; color: var(--muted); margin-top: 8px;">
-          Not connected
-        </div>
-        <div id="pinterest-details" style="font-size: 12px; color: var(--faint); margin-top: 4px; font-family: 'DM Mono', monospace;">
-          App ID: 1564785
-        </div>
-      </div>
-
-      <button id="btn-connect-pinterest" class="btn-approve" style="width: auto; margin-left: 0; padding: 12px 28px; font-size: 14px;" onclick="connectPinterest()">
-        Connect Pinterest Account
+      <button class="nav-btn" onclick="setFilter('pending', this)">
+        <span class="nav-dot dot-pending"></span> Pending
+        <span class="nav-count" id="nc-pending">0</span>
+      </button>
+      <button class="nav-btn" onclick="setFilter('approved', this)">
+        <span class="nav-dot dot-approved"></span> Approved
+        <span class="nav-count" id="nc-approved">0</span>
+      </button>
+      <button class="nav-btn" onclick="setFilter('posted', this)">
+        <span class="nav-dot dot-posted"></span> Posted
+        <span class="nav-count" id="nc-posted">0</span>
       </button>
 
-      <div style="margin-top: 32px; border-top: 1px solid var(--border); padding-top: 20px;">
-        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">Developer Information</h3>
-        <p style="font-size: 12px; color: var(--muted); line-height: 1.6; max-width: 500px;">
-          This integration uses the Pinterest API v5 to manage pins and boards. 
-          When you click "Connect", you will be redirected to Pinterest's secure authorization page to grant permissions.
-        </p>
+      <div class="nav-label">Manage</div>
+      <button class="nav-btn" id="nav-products" onclick="showSection('products', this)">
+        <span class="nav-dot" style="background:var(--blue);"></span> Products
+        <span class="nav-count" id="nc-products">0</span>
+      </button>
+      <button class="nav-btn" id="nav-queue" onclick="showSection('queue', this)">
+        <span class="nav-dot" style="background:#8b5cf6;"></span> Post Queue
+      </button>
+      <button class="nav-btn" id="nav-performance" onclick="showSection('performance', this)">
+        <span class="nav-dot" style="background:var(--green);"></span> Performance
+      </button>
+
+      <div class="nav-label">Settings</div>
+      <button class="nav-btn" id="nav-pinterest" onclick="showSection('pinterest', this)">
+        <span class="nav-dot" style="background:var(--accent);"></span> Pinterest
+      </button>
+
+      <div class="sidebar-footer">
+        <div class="user-row">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <span class="user-email" id="user-email">…</span>
+        </div>
+        <button class="btn-signout" onclick="signOut()">Sign out</button>
       </div>
-    </div>
-  </main>
+    </nav>
 
-</div>
+    <main class="main">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Pin review</h1>
+          <p class="page-sub">Review, edit and approve pins before they go live</p>
+        </div>
+        <button class="btn-refresh" onclick="loadPins()">
+          <span id="refresh-icon">↻</span> Refresh
+        </button>
+      </div>
 
-<input type="file" id="file-input" accept="image/*" style="display:none" />
-<div class="toast" id="toast"></div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Total</div>
+          <div class="stat-val" id="s-total">–</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Pending</div>
+          <div class="stat-val" id="s-pending">–</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Approved</div>
+          <div class="stat-val" id="s-approved">–</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Posted</div>
+          <div class="stat-val" id="s-posted">–</div>
+        </div>
+      </div>
+
+      <div id="bulk-actions"
+        style="display:none; padding: 12px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 14px; align-items: center; gap: 14px;">
+        <input type="checkbox" id="select-all" onclick="toggleSelectAll(this.checked)"
+          style="width: 16px; height: 16px; cursor: pointer;" />
+        <span style="font-size: 13px; font-weight: 500;"><span id="selected-count">0</span> selected</span>
+        <button class="btn-approve" onclick="bulkApprove()" style="margin-left: auto; padding: 6px 14px;">Approve
+          Selected</button>
+        <button class="btn-danger" onclick="bulkRemove()" style="padding: 6px 14px;">Delete Selected</button>
+      </div>
+
+      <div id="pin-list">
+        <div class="loading"><span class="spinner"></span> Loading pins…</div>
+      </div>
+
+      <!-- ── Products section ── -->
+      <div id="products-section" class="section-hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Products</h1>
+            <p class="page-sub">Ranked by weekly score — top product gets pins generated</p>
+          </div>
+          <button class="btn-refresh" onclick="loadAllProducts()">
+            <span id="products-refresh-icon">↻</span> Refresh
+          </button>
+        </div>
+        <div id="product-list">
+          <div class="loading"><span class="spinner"></span> Loading products…</div>
+        </div>
+      </div>
+
+      <!-- ── Performance section ── -->
+      <div id="performance-section" class="section-hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Performance Dashboard</h1>
+            <p class="page-sub">Aggregated metrics across your posted pins</p>
+          </div>
+          <div style="display:flex; gap:12px; align-items:center;">
+            <input type="file" id="csv-upload" accept=".csv" style="display:none;" onchange="handleCSVUpload(event)">
+            <button class="btn-secondary" onclick="document.getElementById('csv-upload').click()">
+              Upload Amazon CSV
+            </button>
+            <button class="btn-refresh" onclick="renderPerformance()">
+              <span id="perf-refresh-icon">↻</span> Refresh
+            </button>
+          </div>
+        </div>
+        <div id="performance-content">
+          <div class="loading"><span class="spinner"></span> Calculating performance data…</div>
+        </div>
+      </div>
+
+      <!-- ── Queue section ── -->
+      <div id="queue-section" class="section-hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Post Queue</h1>
+            <p class="page-sub">Drag and drop to reorder approved pins. The top pin goes out next.</p>
+          </div>
+          <button class="btn-refresh" onclick="renderQueue()">
+            <span id="queue-refresh-icon">↻</span> Refresh
+          </button>
+        </div>
+        <div id="queue-list" style="display: flex; flex-direction: column; gap: 8px;">
+          <div class="loading"><span class="spinner"></span> Loading queue…</div>
+        </div>
+      </div>
+
+      <!-- ── Pinterest section ── -->
+      <div id="pinterest-section" class="section-hidden">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Pinterest Integration</h1>
+            <p class="page-sub">Connect your account to enable automatic posting</p>
+          </div>
+        </div>
+
+        <div class="stat"
+          style="max-width: 400px; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px;">
+          <div class="stat-label">Connection Status</div>
+          <div id="pinterest-status" style="font-size: 18px; font-weight: 600; color: var(--muted); margin-top: 8px;">
+            Not connected
+          </div>
+          <div id="pinterest-details"
+            style="font-size: 12px; color: var(--faint); margin-top: 4px; font-family: 'DM Mono', monospace;">
+            App ID: 1564785
+          </div>
+        </div>
+
+        <button id="btn-connect-pinterest" class="btn-approve"
+          style="width: auto; margin-left: 0; padding: 12px 28px; font-size: 14px;" onclick="connectPinterest()">
+          Connect Pinterest Account
+        </button>
+
+        <div style="margin-top: 32px; border-top: 1px solid var(--border); padding-top: 20px;">
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 10px;">Developer Information</h3>
+          <p style="font-size: 12px; color: var(--muted); line-height: 1.6; max-width: 500px;">
+            This integration uses the Pinterest API v5 to manage pins and boards.
+            When you click "Connect", you will be redirected to Pinterest's secure authorization page to grant
+            permissions.
+          </p>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <input type="file" id="file-input" accept="image/*" style="display:none" />
+  <div class="toast" id="toast"></div>
 
 
-<script>
-// ── Supabase client ──────────────────────────────────────────
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_ANON);
+  <script>
+    // ── Supabase client ──────────────────────────────────────────
+    const { createClient } = supabase;
+    const db = createClient(SUPABASE_URL, SUPABASE_ANON);
 
-let pins        = [];
-let products    = {};   // map of id → product row
-let filter      = 'all';
-let editingId   = null;
-let uploadForId = null;
-let currentUser = null;
-let selectedPins= new Set();
+    let pins = [];
+    let products = {};   // map of id → product row
+    let filter = 'all';
+    let editingId = null;
+    let uploadForId = null;
+    let currentUser = null;
+    let selectedPins = new Set();
 
-// ── Auth ─────────────────────────────────────────────────────
+    // ── Auth ─────────────────────────────────────────────────────
 
-async function signIn() {
-  const { error } = await db.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      // After login, return to this same page
-      redirectTo: window.location.href
-    }
-  });
-  if (error) toast('Sign-in error: ' + error.message);
-}
-
-async function signOut() {
-  await db.auth.signOut();
-  showLogin();
-}
-
-function showLogin() {
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
-}
-
-function showApp(user) {
-  currentUser = user;
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-
-  // Show user info in sidebar
-  const email  = user.email || '';
-  const initials = email.slice(0, 2).toUpperCase();
-  const avatarEl = document.getElementById('user-avatar');
-  const emailEl  = document.getElementById('user-email');
-
-  emailEl.textContent = email;
-
-  const avatarUrl = user.user_metadata?.avatar_url;
-  if (avatarUrl) {
-    avatarEl.innerHTML = `<img src="${avatarUrl}" alt="avatar" />`;
-  } else {
-    avatarEl.textContent = initials;
-  }
-
-  loadPins();
-}
-
-// Listen for auth state changes (handles redirect back after Google login)
-db.auth.onAuthStateChange((event, session) => {
-  if (session?.user) {
-    showApp(session.user);
-    handlePinterestCallback();
-  } else {
-    showLogin();
-  }
-});
-
-// ── Pinterest OAuth ──────────────────────────────────────────
-
-const PINTEREST_APP_ID = "1564785";
-const PINTEREST_REDIRECT = window.location.origin + window.location.pathname;
-
-function connectPinterest() {
-  const scopes = "pins:write,pins:read,boards:read,boards:write,user_accounts:read";
-  const url = `https://www.pinterest.com/oauth/?client_id=${PINTEREST_APP_ID}&redirect_uri=${encodeURIComponent(PINTEREST_REDIRECT)}&response_type=code&scope=${scopes}`;
-  window.location.href = url;
-}
-
-let isExchangingToken = false;
-
-async function handlePinterestCallback() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  
-  if (code && !isExchangingToken) {
-    isExchangingToken = true;
-    
-    // Clean up URL immediately so a refresh or second event doesn't trigger this again
-    window.history.replaceState({}, document.title, window.location.pathname);
-    
-    toast('Exchanging authorization code...');
-    
-    try {
-      const { data, error } = await db.functions.invoke('exchange-token', {
-        body: { code: code }
-      });
-
-      if (error) {
-        // Try to get error message from response body if possible
-        const details = error.context?.message || error.message;
-        throw new Error(details);
-      }
-      
-      if (data && data.success) {
-        document.getElementById('pinterest-status').innerHTML = 
-          '<span style="color:var(--green)">✓ Account Connected & Tokens Saved</span>';
-        document.getElementById('btn-connect-pinterest').textContent = 'Reconnect Account';
-        toast('Pinterest account authorized and saved to DB!');
-      } else {
-        throw new Error(data?.error || 'Exchange failed');
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Failed to save Pinterest tokens: ' + e.message);
-      toast('Authorization failed.');
-    }
-    
-    // Switch to pinterest section to show the result
-    showSection('pinterest', document.getElementById('nav-pinterest'));
-  }
-}
-
-// ── Load pins ────────────────────────────────────────────────
-
-async function loadPins() {
-  document.getElementById('refresh-icon').innerHTML =
-    '<span class="spinner"></span>';
-
-  // Fetch pins, products (for pin cards & lookup), and ALL products count in parallel
-  const [pinsRes, productsRes, allProductsCountRes] = await Promise.all([
-    db.from('pins').select('*, impressions, clicks, saves').order('created_at', { ascending: false }),
-    db.from('products').select('id, name, category, score, commission, affiliate_url, price'),
-    db.from('products').select('id', { count: 'exact', head: true })
-  ]);
-
-  document.getElementById('refresh-icon').textContent = '↻';
-
-  if (pinsRes.error) {
-    document.getElementById('pin-list').innerHTML =
-      `<div class="empty">Error: ${pinsRes.error.message}<br><br>` +
-      `Check your SUPABASE_URL and SUPABASE_ANON values, ` +
-      `and make sure RLS policies are set up correctly.</div>`;
-    return;
-  }
-
-  pins = pinsRes.data || [];
-
-  // Build products lookup map
-  products = {};
-  (productsRes.data || []).forEach(p => products[p.id] = p);
-
-  // Update products count in sidebar immediately
-  const totalProducts = allProductsCountRes.count || 0;
-  document.getElementById('nc-products').textContent = totalProducts;
-
-  updateStats();
-  render();
-}
-
-// ── Stats ────────────────────────────────────────────────────
-
-function getStatus(pin) {
-  if (pin.posted)   return 'posted';
-  if (pin.approved) return 'approved';
-  return 'pending';
-}
-
-function updateStats() {
-  const total    = pins.length;
-  const pending  = pins.filter(p => getStatus(p) === 'pending').length;
-  const approved = pins.filter(p => getStatus(p) === 'approved').length;
-  const posted   = pins.filter(p => getStatus(p) === 'posted').length;
-
-  document.getElementById('s-total').textContent    = total;
-  document.getElementById('s-pending').textContent  = pending;
-  document.getElementById('s-approved').textContent = approved;
-  document.getElementById('s-posted').textContent   = posted;
-
-  document.getElementById('nc-all').textContent      = total;
-  document.getElementById('nc-pending').textContent  = pending;
-  document.getElementById('nc-approved').textContent = approved;
-  document.getElementById('nc-posted').textContent   = posted;
-}
-
-// ── Filter ───────────────────────────────────────────────────
-
-function setFilter(f, btn) {
-  filter = f; editingId = null;
-  selectedPins.clear();
-
-  // If coming from another section, switch back to pins view
-  if (currentSection !== 'pins') {
-    document.querySelector('.stats').style.display = '';
-    document.getElementById('pin-list').style.display = '';
-    document.getElementById('products-section').classList.add('section-hidden');
-    document.getElementById('pinterest-section').classList.add('section-hidden');
-    document.getElementById('performance-section').classList.add('section-hidden');
-    currentSection = 'pins';
-  }
-
-  document.querySelectorAll('.nav-btn')
-    .forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  render();
-}
-
-// ── Approve ──────────────────────────────────────────────────
-
-async function approve(id) {
-  const { error } = await db.from('pins')
-    .update({ approved: true }).eq('id', id);
-  if (error) { toast('Error: ' + error.message); return; }
-  pins.find(p => p.id === id).approved = true;
-  updateStats(); render(); toast('Approved — scheduled to post!');
-}
-
-async function unapprove(id) {
-  const { error } = await db.from('pins')
-    .update({ approved: false }).eq('id', id);
-  if (error) { toast('Error: ' + error.message); return; }
-  pins.find(p => p.id === id).approved = false;
-  updateStats(); render(); toast('Moved back to pending.');
-}
-
-// ── Post Now (Immediate trigger) ──────────────────────────────
-
-async function postNow(id) {
-  if (!confirm('Post this pin to Pinterest immediately?')) return;
-  
-  toast('Sending to Pinterest...');
-  
-  try {
-    console.log("Triggering post-pin for ID:", id);
-    // We call a Supabase Edge Function to handle the Pinterest API call securely
-    const { data, error } = await db.functions.invoke('post-pin', {
-      body: { pin_id: id }
-    });
-    
-    if (error) {
-      console.error("Supabase Function Error:", error);
-      let details = error.message;
-      
-      // Try to extract the JSON error from the function response
-      try {
-        if (error.context && typeof error.context.json === 'function') {
-          const body = await error.context.json();
-          if (body && body.error) details = body.error;
-        } else if (error.context && error.context.error) {
-          details = error.context.error;
+    async function signIn() {
+      const { error } = await db.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          // After login, return to this same page
+          redirectTo: window.location.href
         }
-      } catch (e) {
-        console.warn("Could not parse error body", e);
-      }
-      
-      throw new Error(details);
+      });
+      if (error) toast('Sign-in error: ' + error.message);
     }
-    
-    if (data && data.success) {
-      toast('✓ Successfully posted to Pinterest!');
-      // Update local state
-      const pin = pins.find(p => p.id === id);
-      pin.posted = true;
-      pin.pinterest_id = data.pinterest_id;
-      pin.posted_at = new Date().toISOString();
+
+    async function signOut() {
+      await db.auth.signOut();
+      showLogin();
+    }
+
+    function showLogin() {
+      document.getElementById('login-screen').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+    }
+
+    function showApp(user) {
+      currentUser = user;
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+
+      // Show user info in sidebar
+      const email = user.email || '';
+      const initials = email.slice(0, 2).toUpperCase();
+      const avatarEl = document.getElementById('user-avatar');
+      const emailEl = document.getElementById('user-email');
+
+      emailEl.textContent = email;
+
+      const avatarUrl = user.user_metadata?.avatar_url;
+      if (avatarUrl) {
+        avatarEl.innerHTML = `<img src="${avatarUrl}" alt="avatar" />`;
+      } else {
+        avatarEl.textContent = initials;
+      }
+
+      loadPins();
+    }
+
+    // Listen for auth state changes (handles redirect back after Google login)
+    db.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        showApp(session.user);
+        handlePinterestCallback();
+      } else {
+        showLogin();
+      }
+    });
+
+    // ── Pinterest OAuth ──────────────────────────────────────────
+
+    const PINTEREST_APP_ID = "1564785";
+    const PINTEREST_REDIRECT = window.location.origin + window.location.pathname;
+
+    function connectPinterest() {
+      const scopes = "pins:write,pins:read,boards:read,boards:write,user_accounts:read";
+      const url = `https://www.pinterest.com/oauth/?client_id=${PINTEREST_APP_ID}&redirect_uri=${encodeURIComponent(PINTEREST_REDIRECT)}&response_type=code&scope=${scopes}`;
+      window.location.href = url;
+    }
+
+    let isExchangingToken = false;
+
+    async function handlePinterestCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+
+      if (code && !isExchangingToken) {
+        isExchangingToken = true;
+
+        // Clean up URL immediately so a refresh or second event doesn't trigger this again
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        toast('Exchanging authorization code...');
+
+        try {
+          const { data, error } = await db.functions.invoke('exchange-token', {
+            body: { code: code }
+          });
+
+          if (error) {
+            // Try to get error message from response body if possible
+            const details = error.context?.message || error.message;
+            throw new Error(details);
+          }
+
+          if (data && data.success) {
+            document.getElementById('pinterest-status').innerHTML =
+              '<span style="color:var(--green)">✓ Account Connected & Tokens Saved</span>';
+            document.getElementById('btn-connect-pinterest').textContent = 'Reconnect Account';
+            toast('Pinterest account authorized and saved to DB!');
+          } else {
+            throw new Error(data?.error || 'Exchange failed');
+          }
+        } catch (e) {
+          console.error(e);
+          alert('Failed to save Pinterest tokens: ' + e.message);
+          toast('Authorization failed.');
+        }
+
+        // Switch to pinterest section to show the result
+        showSection('pinterest', document.getElementById('nav-pinterest'));
+      }
+    }
+
+    // ── Load pins ────────────────────────────────────────────────
+
+    async function loadPins() {
+      document.getElementById('refresh-icon').innerHTML =
+        '<span class="spinner"></span>';
+
+      // Fetch pins, products (for pin cards & lookup), and ALL products count in parallel
+      const [pinsRes, productsRes, allProductsCountRes] = await Promise.all([
+        db.from('pins').select('*, impressions, clicks, saves').order('created_at', { ascending: false }),
+        db.from('products').select('id, name, category, score, commission, affiliate_url, price'),
+        db.from('products').select('id', { count: 'exact', head: true })
+      ]);
+
+      document.getElementById('refresh-icon').textContent = '↻';
+
+      if (pinsRes.error) {
+        document.getElementById('pin-list').innerHTML =
+          `<div class="empty">Error: ${pinsRes.error.message}<br><br>` +
+          `Check your SUPABASE_URL and SUPABASE_ANON values, ` +
+          `and make sure RLS policies are set up correctly.</div>`;
+        return;
+      }
+
+      pins = pinsRes.data || [];
+
+      // Build products lookup map
+      products = {};
+      (productsRes.data || []).forEach(p => products[p.id] = p);
+
+      // Update products count in sidebar immediately
+      const totalProducts = allProductsCountRes.count || 0;
+      document.getElementById('nc-products').textContent = totalProducts;
+
       updateStats();
       render();
-    } else {
-      // This is where we show the "Standard Access" vs "Development Access" errors
-      const reason = (data && data.error) || 'Unknown error';
-      console.error("Pinterest API Rejection:", data);
-      
-      const isAuthError = reason.toLowerCase().includes('authorized') || 
-                        reason.toLowerCase().includes('permission') ||
-                        reason.toLowerCase().includes('grant');
-      
-      let msg = `✗ Pinterest API Error: ${reason}`;
-      if (isAuthError) {
-        msg += "\n\nNote: Since you are likely in 'Development' mode, you can only post to your own boards. If you need to post to other accounts, you must request 'Standard Access'.";
-      }
-      
-      alert(msg);
-      toast('Post failed.');
     }
-  } catch (e) {
-    console.error("Critical Post Error:", e);
-    alert('✗ Error triggering post: ' + e.message);
-    toast('Error occurred.');
-  }
-}
 
-// ── Bulk Actions & Inline Edit ───────────────────────────────
+    // ── Stats ────────────────────────────────────────────────────
 
-function toggleSelect(id) {
-  if (selectedPins.has(id)) selectedPins.delete(id);
-  else selectedPins.add(id);
-  renderBulkActions();
-}
+    function getStatus(pin) {
+      if (pin.posted) return 'posted';
+      if (pin.approved) return 'approved';
+      return 'pending';
+    }
 
-function toggleSelectAll(checked) {
-  const pendingPins = pins.filter(p => getStatus(p) === 'pending');
-  if (checked) {
-    pendingPins.forEach(p => selectedPins.add(p.id));
-  } else {
-    selectedPins.clear();
-  }
-  
-  // Update all individual checkboxes to match
-  document.querySelectorAll('.pin-checkbox').forEach(cb => {
-    cb.checked = checked;
-  });
-  
-  renderBulkActions();
-}
+    function updateStats() {
+      const total = pins.length;
+      const pending = pins.filter(p => getStatus(p) === 'pending').length;
+      const approved = pins.filter(p => getStatus(p) === 'approved').length;
+      const posted = pins.filter(p => getStatus(p) === 'posted').length;
 
-function renderBulkActions() {
-  const bar = document.getElementById('bulk-actions');
-  const countEl = document.getElementById('selected-count');
-  
-  if (filter === 'pending' && pins.filter(p => getStatus(p) === 'pending').length > 0) {
-    bar.style.display = 'flex';
-    countEl.textContent = selectedPins.size;
-    document.getElementById('select-all').checked = selectedPins.size > 0 && selectedPins.size === pins.filter(p => getStatus(p) === 'pending').length;
-  } else {
-    bar.style.display = 'none';
-  }
-}
+      document.getElementById('s-total').textContent = total;
+      document.getElementById('s-pending').textContent = pending;
+      document.getElementById('s-approved').textContent = approved;
+      document.getElementById('s-posted').textContent = posted;
 
-async function bulkApprove() {
-  if (selectedPins.size === 0) return;
-  toast(`Approving ${selectedPins.size} pins...`);
-  
-  const ids = Array.from(selectedPins);
-  const { error } = await db.from('pins').update({ approved: true }).in('id', ids);
-  
-  if (error) { toast('Error: ' + error.message); return; }
-  
-  pins.forEach(p => {
-    if (selectedPins.has(p.id)) p.approved = true;
-  });
-  
-  selectedPins.clear();
-  updateStats(); render(); toast('Bulk approved successfully!');
-}
+      document.getElementById('nc-all').textContent = total;
+      document.getElementById('nc-pending').textContent = pending;
+      document.getElementById('nc-approved').textContent = approved;
+      document.getElementById('nc-posted').textContent = posted;
+    }
 
-async function bulkRemove() {
-  if (selectedPins.size === 0) return;
-  if (!confirm(`Permanently delete ${selectedPins.size} pins?`)) return;
-  toast(`Deleting ${selectedPins.size} pins...`);
-  
-  const ids = Array.from(selectedPins);
-  const { error } = await db.from('pins').delete().in('id', ids);
-  
-  if (error) { toast('Error: ' + error.message); return; }
-  
-  pins = pins.filter(p => !selectedPins.has(p.id));
-  selectedPins.clear();
-  updateStats(); render(); toast('Pins removed.');
-}
+    // ── Filter ───────────────────────────────────────────────────
 
-async function saveInlineEdit(id, field, value) {
-  const pin = pins.find(p => p.id === id);
-  if (!pin || pin[field] === value) return; // No change
-  
-  const { error } = await db.from('pins').update({ [field]: value }).eq('id', id);
-  if (!error) {
-    pin[field] = value;
-    // Don't toast for seamless typing experience unless error
-  } else {
-    toast(`Failed to save ${field}`);
-  }
-}
+    function setFilter(f, btn) {
+      filter = f; editingId = null;
+      selectedPins.clear();
 
-// ── Keyboard Shortcuts ───────────────────────────────────────
+      // If coming from another section, switch back to pins view
+      if (currentSection !== 'pins') {
+        document.querySelector('.stats').style.display = '';
+        document.getElementById('pin-list').style.display = '';
+        document.getElementById('products-section').classList.add('section-hidden');
+        document.getElementById('pinterest-section').classList.add('section-hidden');
+        document.getElementById('performance-section').classList.add('section-hidden');
+        currentSection = 'pins';
+      }
 
-window.addEventListener('keydown', (e) => {
-  // Only apply in pending view
-  if (currentSection !== 'pins' || filter !== 'pending') return;
-  
-  // Don't trigger if user is actively typing in an input or textarea
-  if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+      document.querySelectorAll('.nav-btn')
+        .forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      render();
+    }
 
-  const pendingPins = pins.filter(p => getStatus(p) === 'pending');
-  if (!pendingPins.length) return;
-  
-  const topPin = pendingPins[0];
+    // ── Approve ──────────────────────────────────────────────────
 
-  if (e.key === 'a' || e.key === 'A') {
-    e.preventDefault();
-    approve(topPin.id);
-  } else if (e.key === 'r' || e.key === 'R') {
-    e.preventDefault();
-    remove(topPin.id);
-  } else if (e.code === 'Space') {
-    // Let native spacebar scrolling work, or we could auto-scroll to next
-  }
-});
+    async function approve(id) {
+      const { error } = await db.from('pins')
+        .update({ approved: true }).eq('id', id);
+      if (error) { toast('Error: ' + error.message); return; }
+      pins.find(p => p.id === id).approved = true;
+      updateStats(); render(); toast('Approved — scheduled to post!');
+    }
 
-// ── Remove ───────────────────────────────────────────────────
+    async function unapprove(id) {
+      const { error } = await db.from('pins')
+        .update({ approved: false }).eq('id', id);
+      if (error) { toast('Error: ' + error.message); return; }
+      pins.find(p => p.id === id).approved = false;
+      updateStats(); render(); toast('Moved back to pending.');
+    }
 
-async function remove(id) {
-  if (!confirm('Remove this pin permanently?')) return;
-  const { error } = await db.from('pins').delete().eq('id', id);
-  if (error) { toast('Error: ' + error.message); return; }
-  pins = pins.filter(p => p.id !== id);
-  selectedPins.delete(id);
-  updateStats(); render(); toast('Pin removed.');
-}
+    // ── Post Now (Immediate trigger) ──────────────────────────────
 
-// ── Save affiliate link ──────────────────────────────────────
+    async function postNow(id) {
+      if (!confirm('Post this pin to Pinterest immediately?')) return;
 
-async function saveLink(id, linkValue) {
-  // Called from view mode inline save — linkValue passed directly
-  // Called from saveEdit — uses link-edit-{id} input
-  const link = (linkValue !== undefined
-    ? linkValue
-    : (document.getElementById(`link-edit-${id}`) || {}).value || ''
-  ).trim();
-  const { error } = await db.from('pins').update({ link_url: link }).eq('id', id);
-  if (error) { toast('Error: ' + error.message); return; }
-  pins.find(p => p.id === id).link_url = link;
-  render(); toast('Affiliate link saved!');
-}
+      toast('Sending to Pinterest...');
 
-// ── Edit ─────────────────────────────────────────────────────
+      try {
+        console.log("Triggering post-pin for ID:", id);
+        // We call a Supabase Edge Function to handle the Pinterest API call securely
+        const { data, error } = await db.functions.invoke('post-pin', {
+          body: { pin_id: id }
+        });
 
+        if (error) {
+          console.error("Supabase Function Error:", error);
+          let details = error.message;
 
-function startEdit(id) { editingId = id; render(); }
-function cancelEdit()  { editingId = null; render(); }
+          // Try to extract the JSON error from the function response
+          try {
+            if (error.context && typeof error.context.json === 'function') {
+              const body = await error.context.json();
+              if (body && body.error) details = body.error;
+            } else if (error.context && error.context.error) {
+              details = error.context.error;
+            }
+          } catch (e) {
+            console.warn("Could not parse error body", e);
+          }
 
-async function saveEdit(id) {
-  const title = document.getElementById(`t-${id}`).value.trim();
-  const description = document.getElementById(`d-${id}`).value.trim();
-  const altTextInput = document.getElementById(`alt-${id}`);
-  const alt_text = altTextInput ? altTextInput.value.trim() : null;
-  const keywords = document.getElementById(`h-${id}`).value
-    .split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean);
+          throw new Error(details);
+        }
 
-  if (!title || !description) {
-    toast('Title and description cannot be empty.'); return;
-  }
-  if (description.length > 500) {
-    toast(`Description is ${description.length} chars — max 500.`); return;
-  }
+        if (data && data.success) {
+          toast('✓ Successfully posted to Pinterest!');
+          // Update local state
+          const pin = pins.find(p => p.id === id);
+          pin.posted = true;
+          pin.pinterest_id = data.pinterest_id;
+          pin.posted_at = new Date().toISOString();
+          updateStats();
+          render();
+        } else {
+          // This is where we show the "Standard Access" vs "Development Access" errors
+          const reason = (data && data.error) || 'Unknown error';
+          console.error("Pinterest API Rejection:", data);
 
-  const linkInput = document.getElementById(`link-edit-${id}`);
-  const link_url  = linkInput ? linkInput.value.trim() : null;
+          const isAuthError = reason.toLowerCase().includes('authorized') ||
+            reason.toLowerCase().includes('permission') ||
+            reason.toLowerCase().includes('grant');
 
-  const update = { title, description, hashtags: keywords };
-  if (link_url !== null) update.link_url = link_url;
-  if (alt_text !== null) update.alt_text = alt_text;
+          let msg = `✗ Pinterest API Error: ${reason}`;
+          if (isAuthError) {
+            msg += "\n\nNote: Since you are likely in 'Development' mode, you can only post to your own boards. If you need to post to other accounts, you must request 'Standard Access'.";
+          }
 
-  const { error } = await db.from('pins').update(update).eq('id', id);
-  if (error) { toast('Error: ' + error.message); return; }
+          alert(msg);
+          toast('Post failed.');
+        }
+      } catch (e) {
+        console.error("Critical Post Error:", e);
+        alert('✗ Error triggering post: ' + e.message);
+        toast('Error occurred.');
+      }
+    }
 
-  const pin = pins.find(p => p.id === id);
-  pin.title = title; pin.description = description; pin.hashtags = keywords;
-  if (link_url !== null) pin.link_url = link_url;
-  if (alt_text !== null) pin.alt_text = alt_text;
-  editingId = null; render(); toast('Changes saved!');
-}
+    // ── Bulk Actions & Inline Edit ───────────────────────────────
 
-// ── Regen image — via Edge Function (Pexels key stays server-side) ──
+    function toggleSelect(id) {
+      if (selectedPins.has(id)) selectedPins.delete(id);
+      else selectedPins.add(id);
+      renderBulkActions();
+    }
 
-async function regenImage(id) {
-  const pin = pins.find(p => p.id === id);
-  toast('Fetching new image…');
-  try {
-    const { data, error } = await db.functions.invoke('regen-image', {
-      body: { pin_id: id, search_query: pin.pexels_search }
+    function toggleSelectAll(checked) {
+      const pendingPins = pins.filter(p => getStatus(p) === 'pending');
+      if (checked) {
+        pendingPins.forEach(p => selectedPins.add(p.id));
+      } else {
+        selectedPins.clear();
+      }
+
+      // Update all individual checkboxes to match
+      document.querySelectorAll('.pin-checkbox').forEach(cb => {
+        cb.checked = checked;
+      });
+
+      renderBulkActions();
+    }
+
+    function renderBulkActions() {
+      const bar = document.getElementById('bulk-actions');
+      const countEl = document.getElementById('selected-count');
+
+      if (filter === 'pending' && pins.filter(p => getStatus(p) === 'pending').length > 0) {
+        bar.style.display = 'flex';
+        countEl.textContent = selectedPins.size;
+        document.getElementById('select-all').checked = selectedPins.size > 0 && selectedPins.size === pins.filter(p => getStatus(p) === 'pending').length;
+      } else {
+        bar.style.display = 'none';
+      }
+    }
+
+    async function bulkApprove() {
+      if (selectedPins.size === 0) return;
+      toast(`Approving ${selectedPins.size} pins...`);
+
+      const ids = Array.from(selectedPins);
+      const { error } = await db.from('pins').update({ approved: true }).in('id', ids);
+
+      if (error) { toast('Error: ' + error.message); return; }
+
+      pins.forEach(p => {
+        if (selectedPins.has(p.id)) p.approved = true;
+      });
+
+      selectedPins.clear();
+      updateStats(); render(); toast('Bulk approved successfully!');
+    }
+
+    async function bulkRemove() {
+      if (selectedPins.size === 0) return;
+      if (!confirm(`Permanently delete ${selectedPins.size} pins?`)) return;
+      toast(`Deleting ${selectedPins.size} pins...`);
+
+      const ids = Array.from(selectedPins);
+      const { error } = await db.from('pins').delete().in('id', ids);
+
+      if (error) { toast('Error: ' + error.message); return; }
+
+      pins = pins.filter(p => !selectedPins.has(p.id));
+      selectedPins.clear();
+      updateStats(); render(); toast('Pins removed.');
+    }
+
+    async function saveInlineEdit(id, field, value) {
+      const pin = pins.find(p => p.id === id);
+      if (!pin || pin[field] === value) return; // No change
+
+      const { error } = await db.from('pins').update({ [field]: value }).eq('id', id);
+      if (!error) {
+        pin[field] = value;
+        // Don't toast for seamless typing experience unless error
+      } else {
+        toast(`Failed to save ${field}`);
+      }
+    }
+
+    // ── Keyboard Shortcuts ───────────────────────────────────────
+
+    window.addEventListener('keydown', (e) => {
+      // Only apply in pending view
+      if (currentSection !== 'pins' || filter !== 'pending') return;
+
+      // Don't trigger if user is actively typing in an input or textarea
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+      const pendingPins = pins.filter(p => getStatus(p) === 'pending');
+      if (!pendingPins.length) return;
+
+      const topPin = pendingPins[0];
+
+      if (e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        approve(topPin.id);
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        remove(topPin.id);
+      } else if (e.code === 'Space') {
+        // Let native spacebar scrolling work, or we could auto-scroll to next
+      }
     });
-    if (error) throw new Error(error.message);
-    pin.image_url = data.image_url;
-    render(); toast('New image loaded!');
-  } catch (e) {
-    toast('Image error: ' + e.message);
-  }
-}
 
-async function changeSearch(id) {
-  const q = document.getElementById(`search-${id}`).value.trim();
-  if (!q) { toast('Enter a search query first.'); return; }
-  pins.find(p => p.id === id).pexels_search = q;
-  await db.from('pins').update({ pexels_search: q }).eq('id', id);
-  await regenImage(id);
-}
+    // ── Remove ───────────────────────────────────────────────────
 
-// ── Upload own image ─────────────────────────────────────────
+    async function remove(id) {
+      if (!confirm('Remove this pin permanently?')) return;
+      const { error } = await db.from('pins').delete().eq('id', id);
+      if (error) { toast('Error: ' + error.message); return; }
+      pins = pins.filter(p => p.id !== id);
+      selectedPins.delete(id);
+      updateStats(); render(); toast('Pin removed.');
+    }
 
-function triggerUpload(id) {
-  uploadForId = id;
-  document.getElementById('file-input').click();
-}
+    // ── Save affiliate link ──────────────────────────────────────
 
-document.getElementById('file-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file || !uploadForId) return;
-  toast('Uploading image…');
+    async function saveLink(id, linkValue) {
+      // Called from view mode inline save — linkValue passed directly
+      // Called from saveEdit — uses link-edit-{id} input
+      const link = (linkValue !== undefined
+        ? linkValue
+        : (document.getElementById(`link-edit-${id}`) || {}).value || ''
+      ).trim();
+      const { error } = await db.from('pins').update({ link_url: link }).eq('id', id);
+      if (error) { toast('Error: ' + error.message); return; }
+      pins.find(p => p.id === id).link_url = link;
+      render(); toast('Affiliate link saved!');
+    }
 
-  const fileName = `custom-${uploadForId}-${Date.now()}.jpg`;
-  const { error: upErr } = await db.storage
-    .from('pin-images')
-    .upload(fileName, file, { upsert: true, contentType: file.type });
+    // ── Edit ─────────────────────────────────────────────────────
 
-  if (upErr) { toast('Upload failed: ' + upErr.message); return; }
 
-  const { data: { publicUrl } } = db.storage
-    .from('pin-images').getPublicUrl(fileName);
+    function startEdit(id) { editingId = id; render(); }
+    function cancelEdit() { editingId = null; render(); }
 
-  const { error: dbErr } = await db.from('pins')
-    .update({ image_url: publicUrl }).eq('id', uploadForId);
+    async function saveEdit(id) {
+      const title = document.getElementById(`t-${id}`).value.trim();
+      const description = document.getElementById(`d-${id}`).value.trim();
+      const altTextInput = document.getElementById(`alt-${id}`);
+      const alt_text = altTextInput ? altTextInput.value.trim() : null;
+      const keywords = document.getElementById(`h-${id}`).value
+        .split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean);
 
-  if (dbErr) { toast('DB error: ' + dbErr.message); return; }
+      if (!title || !description) {
+        toast('Title and description cannot be empty.'); return;
+      }
+      if (description.length > 500) {
+        toast(`Description is ${description.length} chars — max 500.`); return;
+      }
 
-  pins.find(p => p.id === uploadForId).image_url = publicUrl;
-  uploadForId = null;
-  e.target.value = '';
-  render(); toast('Your image saved!');
-});
+      const linkInput = document.getElementById(`link-edit-${id}`);
+      const link_url = linkInput ? linkInput.value.trim() : null;
 
-// ── Toast ────────────────────────────────────────────────────
+      const update = { title, description, hashtags: keywords };
+      if (link_url !== null) update.link_url = link_url;
+      if (alt_text !== null) update.alt_text = alt_text;
 
-function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.style.display = 'block';
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.style.display = 'none', 2800);
-}
+      const { error } = await db.from('pins').update(update).eq('id', id);
+      if (error) { toast('Error: ' + error.message); return; }
 
-// ── Render ───────────────────────────────────────────────────
+      const pin = pins.find(p => p.id === id);
+      pin.title = title; pin.description = description; pin.hashtags = keywords;
+      if (link_url !== null) pin.link_url = link_url;
+      if (alt_text !== null) pin.alt_text = alt_text;
+      editingId = null; render(); toast('Changes saved!');
+    }
 
-function esc(str) {
-  return (str || '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+    // ── Regen image — via Edge Function (Pexels key stays server-side) ──
 
-function render() {
-  const list = document.getElementById('pin-list');
-  const filtered = filter === 'all'
-    ? pins : pins.filter(p => getStatus(p) === filter);
+    async function regenImage(id) {
+      const pin = pins.find(p => p.id === id);
+      toast('Fetching new image…');
+      try {
+        const { data, error } = await db.functions.invoke('regen-image', {
+          body: { pin_id: id, search_query: pin.pexels_search }
+        });
+        if (error) throw new Error(error.message);
+        pin.image_url = data.image_url;
+        render(); toast('New image loaded!');
+      } catch (e) {
+        toast('Image error: ' + e.message);
+      }
+    }
 
-  if (!filtered.length) {
-    list.innerHTML =
-      `<div class="empty">No ${filter === 'all' ? '' : filter + ' '}pins yet.</div>`;
-    return;
-  }
+    async function changeSearch(id) {
+      const q = document.getElementById(`search-${id}`).value.trim();
+      if (!q) { toast('Enter a search query first.'); return; }
+      pins.find(p => p.id === id).pexels_search = q;
+      await db.from('pins').update({ pexels_search: q }).eq('id', id);
+      await regenImage(id);
+    }
 
-  list.innerHTML = filtered.map(pin => {
-    const status    = getStatus(pin);
-    const isEditing = editingId === pin.id;
-    const canEdit   = !pin.posted;
-    
-    // Determine if this is the "Up Next" pin
-    const upNextPin = pins
-      .filter(p => getStatus(p) === 'approved')
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
-    const isUpNext = upNextPin && upNextPin.id === pin.id;
+    // ── Upload own image ─────────────────────────────────────────
 
-    const kwTags   = (pin.keywords || [])
-      .map(t => `<span class="tag">${esc(t)}</span>`).join('');
+    function triggerUpload(id) {
+      uploadForId = id;
+      document.getElementById('file-input').click();
+    }
 
-    return `
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file || !uploadForId) return;
+      toast('Uploading image…');
+
+      const fileName = `custom-${uploadForId}-${Date.now()}.jpg`;
+      const { error: upErr } = await db.storage
+        .from('pin-images')
+        .upload(fileName, file, { upsert: true, contentType: file.type });
+
+      if (upErr) { toast('Upload failed: ' + upErr.message); return; }
+
+      const { data: { publicUrl } } = db.storage
+        .from('pin-images').getPublicUrl(fileName);
+
+      const { error: dbErr } = await db.from('pins')
+        .update({ image_url: publicUrl }).eq('id', uploadForId);
+
+      if (dbErr) { toast('DB error: ' + dbErr.message); return; }
+
+      pins.find(p => p.id === uploadForId).image_url = publicUrl;
+      uploadForId = null;
+      e.target.value = '';
+      render(); toast('Your image saved!');
+    });
+
+    // ── Toast ────────────────────────────────────────────────────
+
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg; el.style.display = 'block';
+      clearTimeout(el._t);
+      el._t = setTimeout(() => el.style.display = 'none', 2800);
+    }
+
+    // ── Render ───────────────────────────────────────────────────
+
+    function esc(str) {
+      return (str || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function render() {
+      const list = document.getElementById('pin-list');
+      const filtered = filter === 'all'
+        ? pins : pins.filter(p => getStatus(p) === filter);
+
+      if (!filtered.length) {
+        list.innerHTML =
+          `<div class="empty">No ${filter === 'all' ? '' : filter + ' '}pins yet.</div>`;
+        return;
+      }
+
+      list.innerHTML = filtered.map(pin => {
+        const status = getStatus(pin);
+        const isEditing = editingId === pin.id;
+        const canEdit = !pin.posted;
+
+        // Determine if this is the "Up Next" pin
+        const upNextPin = pins
+          .filter(p => getStatus(p) === 'approved')
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))[0];
+        const isUpNext = upNextPin && upNextPin.id === pin.id;
+
+        const kwTags = (pin.keywords || [])
+          .map(t => `<span class="tag">${esc(t)}</span>`).join('');
+
+        return `
     <div class="pin-card">
       <div class="pin-inner">
 
@@ -1315,7 +1844,7 @@ function render() {
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
               ${pin.score
-                ? `<span class="score-chip">${pin.score}/10</span>` : ''}
+            ? `<span class="score-chip">${pin.score}/10</span>` : ''}
               <span style="font-family:'DM Mono',monospace;font-size:11px;
                 color:var(--faint);">#${pin.id}</span>
             </div>
@@ -1358,7 +1887,7 @@ function render() {
                 onblur="saveInlineEdit(${pin.id}, 'description', this.value)">${esc(pin.description)}</textarea>
             </div>
             <div>
-              <div class="field-label">Alt text (accessibility) <span style="font-weight:400;color:var(--faint)">(${(pin.alt_text||'').length}/500 chars)</span></div>
+              <div class="field-label">Alt text (accessibility) <span style="font-weight:400;color:var(--faint)">(${(pin.alt_text || '').length}/500 chars)</span></div>
               <textarea id="alt-${pin.id}" class="edit-textarea" maxlength="500"
                 style="min-height:55px;" placeholder="Describe the image for visually impaired users…"
                 onblur="saveInlineEdit(${pin.id}, 'alt_text', this.value)">${esc(pin.alt_text || '')}</textarea>
@@ -1394,7 +1923,7 @@ function render() {
               <div class="field-title">${esc(pin.title)}</div>
             </div>
             <div>
-              <div class="field-label">Description <span style="font-weight:400;color:${(pin.description||'').length > 500 ? 'var(--red)' : 'var(--faint)'}">(${(pin.description||'').length}/500 chars)</span></div>
+              <div class="field-label">Description <span style="font-weight:400;color:${(pin.description || '').length > 500 ? 'var(--red)' : 'var(--faint)'}">(${(pin.description || '').length}/500 chars)</span></div>
               <div class="field-desc">${esc(pin.description)}</div>
             </div>
             <div>
@@ -1441,7 +1970,7 @@ function render() {
                     style="font-size:11px;font-family:'DM Mono',monospace;
                     color:var(--blue);word-break:break-all;flex:1;
                     text-decoration:none;">
-                    ${esc(pin.link_url.length > 60 ? pin.link_url.slice(0,60)+'…' : pin.link_url)}
+                    ${esc(pin.link_url.length > 60 ? pin.link_url.slice(0, 60) + '…' : pin.link_url)}
                   </a>
                   <button onclick="navigator.clipboard.writeText(pins.find(p=>p.id===${pin.id}).link_url);toast('Link copied!')"
                     style="background:transparent;border:1px solid var(--border);
@@ -1478,135 +2007,135 @@ function render() {
               <button class="btn-danger" onclick="remove(${pin.id})">Remove</button>
               ${status !== 'pending' ? `<button class="btn-secondary" onclick="startEdit(${pin.id})">Edit</button>` : ''}
               ${pin.approved
-                ? `<div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
+            ? `<div style="display:flex;align-items:center;gap:12px;margin-left:auto;">
                     <button class="btn-secondary" style="padding:6px 14px;font-size:11px;" 
                       onclick="unapprove(${pin.id})">Move to Pending</button>
                     <button class="btn-approve" style="background:var(--text);padding:6px 14px;font-size:11px;" 
                       onclick="postNow(${pin.id})">Post Now</button>
                   </div>`
-                : `<button class="btn-approve"
+            : `<button class="btn-approve"
                     onclick="approve(${pin.id})">Approve <span style="font-size:10px; opacity:0.7; margin-left:4px;">(A)</span></button>`
-              }
+          }
             `}
           </div>
         </div>
       </div>
     </div>`;
-  }).join('');
-}
+      }).join('');
+    }
 
-// ── Section switching ────────────────────────────────────────
+    // ── Section switching ────────────────────────────────────────
 
-let currentSection = 'pins';
+    let currentSection = 'pins';
 
-function showSection(section, btn) {
-  currentSection = section;
+    function showSection(section, btn) {
+      currentSection = section;
 
-  // Update sidebar active state
-  document.querySelectorAll('.nav-btn')
-    .forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+      // Update sidebar active state
+      document.querySelectorAll('.nav-btn')
+        .forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
 
-  // Show/hide sections
-  const pinSection      = document.getElementById('pin-list');
-  const productsSection = document.getElementById('products-section');
-  const pinterestSection = document.getElementById('pinterest-section');
-  const performanceSection = document.getElementById('performance-section');
-  const queueSection = document.getElementById('queue-section');
+      // Show/hide sections
+      const pinSection = document.getElementById('pin-list');
+      const productsSection = document.getElementById('products-section');
+      const pinterestSection = document.getElementById('pinterest-section');
+      const performanceSection = document.getElementById('performance-section');
+      const queueSection = document.getElementById('queue-section');
 
-  // Hide all sections first
-  document.querySelector('.stats').style.display = 'none';
-  document.getElementById('bulk-actions').style.display = 'none';
-  pinSection.style.display = 'none';
-  productsSection.classList.add('section-hidden');
-  pinterestSection.classList.add('section-hidden');
-  performanceSection.classList.add('section-hidden');
-  queueSection.classList.add('section-hidden');
+      // Hide all sections first
+      document.querySelector('.stats').style.display = 'none';
+      document.getElementById('bulk-actions').style.display = 'none';
+      pinSection.style.display = 'none';
+      productsSection.classList.add('section-hidden');
+      pinterestSection.classList.add('section-hidden');
+      performanceSection.classList.add('section-hidden');
+      queueSection.classList.add('section-hidden');
 
-  if (section === 'products') {
-    productsSection.classList.remove('section-hidden');
-    loadAllProducts();
-  } else if (section === 'pinterest') {
-    pinterestSection.classList.remove('section-hidden');
-  } else if (section === 'performance') {
-    performanceSection.classList.remove('section-hidden');
-    renderPerformance();
-  } else if (section === 'queue') {
-    queueSection.classList.remove('section-hidden');
-    renderQueue();
-  } else {
-    // Default to pins
-    document.querySelector('.stats').style.display = '';
-    pinSection.style.display = '';
-    renderBulkActions();
-  }
-}
+      if (section === 'products') {
+        productsSection.classList.remove('section-hidden');
+        loadAllProducts();
+      } else if (section === 'pinterest') {
+        pinterestSection.classList.remove('section-hidden');
+      } else if (section === 'performance') {
+        performanceSection.classList.remove('section-hidden');
+        renderPerformance();
+      } else if (section === 'queue') {
+        queueSection.classList.remove('section-hidden');
+        renderQueue();
+      } else {
+        // Default to pins
+        document.querySelector('.stats').style.display = '';
+        pinSection.style.display = '';
+        renderBulkActions();
+      }
+    }
 
-// ── Load all products (full detail) ─────────────────────────
+    // ── Load all products (full detail) ─────────────────────────
 
-let allProducts = [];
+    let allProducts = [];
 
-async function loadAllProducts() {
-  document.getElementById('products-refresh-icon').innerHTML =
-    '<span class="spinner"></span>';
+    async function loadAllProducts() {
+      document.getElementById('products-refresh-icon').innerHTML =
+        '<span class="spinner"></span>';
 
-  const { data, error } = await db
-    .from('products')
-    .select('*')
-    .order('score', { ascending: false });
+      const { data, error } = await db
+        .from('products')
+        .select('*')
+        .order('score', { ascending: false });
 
-  document.getElementById('products-refresh-icon').textContent = '↻';
+      document.getElementById('products-refresh-icon').textContent = '↻';
 
-  if (error) {
-    document.getElementById('product-list').innerHTML =
-      `<div class="empty">Error loading products: ${error.message}</div>`;
-    return;
-  }
+      if (error) {
+        document.getElementById('product-list').innerHTML =
+          `<div class="empty">Error loading products: ${error.message}</div>`;
+        return;
+      }
 
-  allProducts = data || [];
-  document.getElementById('nc-products').textContent = allProducts.length;
-  renderProducts();
-}
+      allProducts = data || [];
+      document.getElementById('nc-products').textContent = allProducts.length;
+      renderProducts();
+    }
 
-// ── Save product affiliate URL ───────────────────────────────
+    // ── Save product affiliate URL ───────────────────────────────
 
-async function saveProductLink(productId) {
-  const val = document.getElementById(`prod-link-${productId}`).value.trim();
-  const { error } = await db.from('products')
-    .update({ affiliate_url: val }).eq('id', productId);
-  if (error) { toast('Error: ' + error.message); return; }
-  allProducts.find(p => p.id === productId).affiliate_url = val;
-  renderProducts();
-  toast('Affiliate URL saved!');
-}
+    async function saveProductLink(productId) {
+      const val = document.getElementById(`prod-link-${productId}`).value.trim();
+      const { error } = await db.from('products')
+        .update({ affiliate_url: val }).eq('id', productId);
+      if (error) { toast('Error: ' + error.message); return; }
+      allProducts.find(p => p.id === productId).affiliate_url = val;
+      renderProducts();
+      toast('Affiliate URL saved!');
+    }
 
-// ── Toggle product active/paused ────────────────────────────
+    // ── Toggle product active/paused ────────────────────────────
 
-async function toggleProduct(productId, currentActive) {
-  const { error } = await db.from('products')
-    .update({ active: !currentActive }).eq('id', productId);
-  if (error) { toast('Error: ' + error.message); return; }
-  allProducts.find(p => p.id === productId).active = !currentActive;
-  renderProducts();
-  toast(currentActive ? 'Product paused.' : 'Product activated.');
-}
+    async function toggleProduct(productId, currentActive) {
+      const { error } = await db.from('products')
+        .update({ active: !currentActive }).eq('id', productId);
+      if (error) { toast('Error: ' + error.message); return; }
+      allProducts.find(p => p.id === productId).active = !currentActive;
+      renderProducts();
+      toast(currentActive ? 'Product paused.' : 'Product activated.');
+    }
 
-// ── Render Queue ─────────────────────────────────────────────
+    // ── Render Queue ─────────────────────────────────────────────
 
-let draggedItem = null;
+    let draggedItem = null;
 
-function renderQueue() {
-  const list = document.getElementById('queue-list');
-  const approvedPins = pins
-    .filter(p => getStatus(p) === 'approved')
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    function renderQueue() {
+      const list = document.getElementById('queue-list');
+      const approvedPins = pins
+        .filter(p => getStatus(p) === 'approved')
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-  if (!approvedPins.length) {
-    list.innerHTML = `<div class="empty">No approved pins in queue.</div>`;
-    return;
-  }
+      if (!approvedPins.length) {
+        list.innerHTML = `<div class="empty">No approved pins in queue.</div>`;
+        return;
+      }
 
-  list.innerHTML = approvedPins.map((pin, i) => `
+      list.innerHTML = approvedPins.map((pin, i) => `
     <div class="queue-item" draggable="true" data-id="${pin.id}" 
          style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; align-items: center; gap: 16px; cursor: grab; transition: border-color 0.2s;"
          ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragend="handleDragEnd(event)">
@@ -1624,207 +2153,207 @@ function renderQueue() {
       ${i === 0 ? `<div class="badge badge-approved" style="background: var(--blue); color: white; border: none;">UP NEXT</div>` : ''}
     </div>
   `).join('');
-}
-
-function handleDragStart(e) {
-  draggedItem = e.target.closest('.queue-item');
-  draggedItem.style.opacity = '0.5';
-  e.dataTransfer.effectAllowed = 'move';
-}
-
-function handleDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  const target = e.target.closest('.queue-item');
-  if (target && target !== draggedItem) {
-    target.style.borderTop = '2px solid var(--blue)';
-  }
-}
-
-function handleDragEnd(e) {
-  draggedItem.style.opacity = '1';
-  document.querySelectorAll('.queue-item').forEach(el => el.style.borderTop = '');
-}
-
-async function handleDrop(e) {
-  e.preventDefault();
-  const target = e.target.closest('.queue-item');
-  document.querySelectorAll('.queue-item').forEach(el => el.style.borderTop = '');
-  
-  if (target && target !== draggedItem) {
-    const list = document.getElementById('queue-list');
-    const items = Array.from(list.children);
-    const draggedIndex = items.indexOf(draggedItem);
-    const targetIndex = items.indexOf(target);
-    
-    if (draggedIndex < targetIndex) {
-      target.after(draggedItem);
-    } else {
-      target.before(draggedItem);
     }
-    
-    await saveQueueOrder();
-  }
-}
 
-async function saveQueueOrder() {
-  toast('Saving queue order...');
-  const items = Array.from(document.querySelectorAll('.queue-item'));
-  const newOrderIds = items.map(el => parseInt(el.dataset.id));
-  
-  // Since our cron job pulls "ORDER BY created_at ASC", we need to update created_at timestamps.
-  // We'll stagger them by 1 second, starting from right now.
-  const now = new Date();
-  const updates = newOrderIds.map((id, index) => {
-    // Top of queue = oldest timestamp.
-    const newTime = new Date(now.getTime() + (index * 1000));
-    return {
-      id: id,
-      created_at: newTime.toISOString()
-    };
-  });
-  
-  // Supabase doesn't easily support bulk upserting with different values without an RPC or upsert
-  // Since it's usually < 20 pins in queue, we can just do individual updates, or standard upsert.
-  // Actually, we can fetch all approved pins, modify them, and upsert.
-  const pinsToUpdate = updates.map(u => {
-    const p = Object.assign({}, pins.find(pin => pin.id === u.id));
-    p.created_at = u.created_at;
-    return p;
-  });
-
-  const { error } = await db.from('pins').upsert(pinsToUpdate);
-  
-  if (error) {
-    toast('Error saving order: ' + error.message);
-  } else {
-    // Update local state
-    updates.forEach(u => {
-      const p = pins.find(pin => pin.id === u.id);
-      if (p) p.created_at = u.created_at;
-    });
-    toast('Queue updated!');
-    renderQueue(); // Re-render to update the # numbers
-  }
-}
-
-// ── Render performance ───────────────────────────────────────
-
-let amazonStats = JSON.parse(localStorage.getItem('amazonStats') || '{}');
-
-async function handleCSVUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  toast('Parsing Amazon CSV...');
-  const text = await file.text();
-  
-  const lines = text.split('\n').filter(l => l.trim().length > 0);
-  if (lines.length < 2) return toast('Invalid CSV');
-  
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
-  const asinIndex = headers.findIndex(h => h.includes('asin') || h.includes('item'));
-  const earningsIndex = headers.findIndex(h => h.includes('earnings') || h.includes('revenue') || h.includes('bounty') || h.includes('income'));
-  
-  if (asinIndex === -1) return toast('Error: No ASIN column found in CSV');
-  
-  let matchCount = 0;
-  let totalEarnings = 0;
-  
-  for (let i = 1; i < lines.length; i++) {
-    const rowStr = lines[i];
-    let inQuote = false;
-    let currentVal = '';
-    const cols = [];
-    for(let char of rowStr) {
-      if(char === '"') { inQuote = !inQuote; }
-      else if(char === ',' && !inQuote) { cols.push(currentVal); currentVal = ''; }
-      else { currentVal += char; }
+    function handleDragStart(e) {
+      draggedItem = e.target.closest('.queue-item');
+      draggedItem.style.opacity = '0.5';
+      e.dataTransfer.effectAllowed = 'move';
     }
-    cols.push(currentVal);
-    
-    if (cols.length <= asinIndex) continue;
-    const asin = cols[asinIndex].trim();
-    if (!asin) continue;
-    
-    const earnings = earningsIndex !== -1 ? parseFloat(cols[earningsIndex].replace(/[^0-9.-]+/g,"")) : 0;
-    
-    if (!isNaN(earnings) && earnings > 0) {
-       amazonStats[asin] = (amazonStats[asin] || 0) + earnings;
-       totalEarnings += earnings;
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const target = e.target.closest('.queue-item');
+      if (target && target !== draggedItem) {
+        target.style.borderTop = '2px solid var(--blue)';
+      }
     }
-    
-    if (Object.values(products).some(p => p.asin === asin)) {
-      matchCount++;
+
+    function handleDragEnd(e) {
+      draggedItem.style.opacity = '1';
+      document.querySelectorAll('.queue-item').forEach(el => el.style.borderTop = '');
     }
-  }
-  
-  localStorage.setItem('amazonStats', JSON.stringify(amazonStats));
-  toast(`CSV Processed! Synced £${totalEarnings.toFixed(2)} new earnings.`);
-  
-  if (currentSection === 'performance') renderPerformance();
-  e.target.value = ''; // Reset input
-}
 
-function getHookType(title) {
-  if (!title) return 'Statement';
-  const lower = title.toLowerCase();
-  if (title.includes('?')) return 'Question';
-  if (lower.includes('£') || lower.includes('$')) return 'Price/Deal';
-  if (lower.includes('i ') || lower.includes("i've") || lower.includes('my ')) return 'First Person';
-  if (lower.includes('you ') || lower.includes('your ')) return 'Direct Address';
-  return 'Statement';
-}
+    async function handleDrop(e) {
+      e.preventDefault();
+      const target = e.target.closest('.queue-item');
+      document.querySelectorAll('.queue-item').forEach(el => el.style.borderTop = '');
 
-function renderPerformance() {
-  const content = document.getElementById('performance-content');
-  const postedPins = pins.filter(p => p.posted);
-  
-  if (!postedPins.length) {
-    content.innerHTML = `<div class="empty">No posted pins yet to calculate performance.</div>`;
-    return;
-  }
+      if (target && target !== draggedItem) {
+        const list = document.getElementById('queue-list');
+        const items = Array.from(list.children);
+        const draggedIndex = items.indexOf(draggedItem);
+        const targetIndex = items.indexOf(target);
 
-  // 1. Account Totals
-  const totalImps = postedPins.reduce((sum, p) => sum + (p.impressions || 0), 0);
-  const totalClicks = postedPins.reduce((sum, p) => sum + (p.clicks || 0), 0);
-  const totalSaves = postedPins.reduce((sum, p) => sum + (p.saves || 0), 0);
-  const avgCtr = totalImps > 0 ? ((totalClicks / totalImps) * 100).toFixed(2) : '0.00';
+        if (draggedIndex < targetIndex) {
+          target.after(draggedItem);
+        } else {
+          target.before(draggedItem);
+        }
 
-  // 2. Templates Grouping
-  const tplStats = {};
-  const hookStats = {};
-  const prodStats = {};
-
-  postedPins.forEach(p => {
-    // Template tracking
-    const tpl = p.template_style || 'Unknown';
-    if (!tplStats[tpl]) tplStats[tpl] = { count: 0, imps: 0, clicks: 0, saves: 0 };
-    tplStats[tpl].count++;
-    tplStats[tpl].imps += (p.impressions || 0);
-    tplStats[tpl].clicks += (p.clicks || 0);
-    tplStats[tpl].saves += (p.saves || 0);
-    
-    // Hook Type tracking
-    const hook = getHookType(p.title);
-    if (!hookStats[hook]) hookStats[hook] = { count: 0, imps: 0, clicks: 0 };
-    hookStats[hook].count++;
-    hookStats[hook].imps += (p.impressions || 0);
-    hookStats[hook].clicks += (p.clicks || 0);
-    
-    // Product Opportunity tracking
-    if (p.product_id) {
-      if (!prodStats[p.product_id]) prodStats[p.product_id] = { id: p.product_id, imps: 0, clicks: 0 };
-      prodStats[p.product_id].imps += (p.impressions || 0);
-      prodStats[p.product_id].clicks += (p.clicks || 0);
+        await saveQueueOrder();
+      }
     }
-  });
-  
-  const templatesHtml = Object.entries(tplStats)
-    .sort((a, b) => b[1].clicks - a[1].clicks) // sort by clicks desc
-    .map(([tpl, s]) => {
-      const ctr = s.imps > 0 ? ((s.clicks / s.imps) * 100).toFixed(2) : '0.00';
-      return `
+
+    async function saveQueueOrder() {
+      toast('Saving queue order...');
+      const items = Array.from(document.querySelectorAll('.queue-item'));
+      const newOrderIds = items.map(el => parseInt(el.dataset.id));
+
+      // Since our cron job pulls "ORDER BY created_at ASC", we need to update created_at timestamps.
+      // We'll stagger them by 1 second, starting from right now.
+      const now = new Date();
+      const updates = newOrderIds.map((id, index) => {
+        // Top of queue = oldest timestamp.
+        const newTime = new Date(now.getTime() + (index * 1000));
+        return {
+          id: id,
+          created_at: newTime.toISOString()
+        };
+      });
+
+      // Supabase doesn't easily support bulk upserting with different values without an RPC or upsert
+      // Since it's usually < 20 pins in queue, we can just do individual updates, or standard upsert.
+      // Actually, we can fetch all approved pins, modify them, and upsert.
+      const pinsToUpdate = updates.map(u => {
+        const p = Object.assign({}, pins.find(pin => pin.id === u.id));
+        p.created_at = u.created_at;
+        return p;
+      });
+
+      const { error } = await db.from('pins').upsert(pinsToUpdate);
+
+      if (error) {
+        toast('Error saving order: ' + error.message);
+      } else {
+        // Update local state
+        updates.forEach(u => {
+          const p = pins.find(pin => pin.id === u.id);
+          if (p) p.created_at = u.created_at;
+        });
+        toast('Queue updated!');
+        renderQueue(); // Re-render to update the # numbers
+      }
+    }
+
+    // ── Render performance ───────────────────────────────────────
+
+    let amazonStats = JSON.parse(localStorage.getItem('amazonStats') || '{}');
+
+    async function handleCSVUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      toast('Parsing Amazon CSV...');
+      const text = await file.text();
+
+      const lines = text.split('\n').filter(l => l.trim().length > 0);
+      if (lines.length < 2) return toast('Invalid CSV');
+
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+      const asinIndex = headers.findIndex(h => h.includes('asin') || h.includes('item'));
+      const earningsIndex = headers.findIndex(h => h.includes('earnings') || h.includes('revenue') || h.includes('bounty') || h.includes('income'));
+
+      if (asinIndex === -1) return toast('Error: No ASIN column found in CSV');
+
+      let matchCount = 0;
+      let totalEarnings = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const rowStr = lines[i];
+        let inQuote = false;
+        let currentVal = '';
+        const cols = [];
+        for (let char of rowStr) {
+          if (char === '"') { inQuote = !inQuote; }
+          else if (char === ',' && !inQuote) { cols.push(currentVal); currentVal = ''; }
+          else { currentVal += char; }
+        }
+        cols.push(currentVal);
+
+        if (cols.length <= asinIndex) continue;
+        const asin = cols[asinIndex].trim();
+        if (!asin) continue;
+
+        const earnings = earningsIndex !== -1 ? parseFloat(cols[earningsIndex].replace(/[^0-9.-]+/g, "")) : 0;
+
+        if (!isNaN(earnings) && earnings > 0) {
+          amazonStats[asin] = (amazonStats[asin] || 0) + earnings;
+          totalEarnings += earnings;
+        }
+
+        if (Object.values(products).some(p => p.asin === asin)) {
+          matchCount++;
+        }
+      }
+
+      localStorage.setItem('amazonStats', JSON.stringify(amazonStats));
+      toast(`CSV Processed! Synced £${totalEarnings.toFixed(2)} new earnings.`);
+
+      if (currentSection === 'performance') renderPerformance();
+      e.target.value = ''; // Reset input
+    }
+
+    function getHookType(title) {
+      if (!title) return 'Statement';
+      const lower = title.toLowerCase();
+      if (title.includes('?')) return 'Question';
+      if (lower.includes('£') || lower.includes('$')) return 'Price/Deal';
+      if (lower.includes('i ') || lower.includes("i've") || lower.includes('my ')) return 'First Person';
+      if (lower.includes('you ') || lower.includes('your ')) return 'Direct Address';
+      return 'Statement';
+    }
+
+    function renderPerformance() {
+      const content = document.getElementById('performance-content');
+      const postedPins = pins.filter(p => p.posted);
+
+      if (!postedPins.length) {
+        content.innerHTML = `<div class="empty">No posted pins yet to calculate performance.</div>`;
+        return;
+      }
+
+      // 1. Account Totals
+      const totalImps = postedPins.reduce((sum, p) => sum + (p.impressions || 0), 0);
+      const totalClicks = postedPins.reduce((sum, p) => sum + (p.clicks || 0), 0);
+      const totalSaves = postedPins.reduce((sum, p) => sum + (p.saves || 0), 0);
+      const avgCtr = totalImps > 0 ? ((totalClicks / totalImps) * 100).toFixed(2) : '0.00';
+
+      // 2. Templates Grouping
+      const tplStats = {};
+      const hookStats = {};
+      const prodStats = {};
+
+      postedPins.forEach(p => {
+        // Template tracking
+        const tpl = p.template_style || 'Unknown';
+        if (!tplStats[tpl]) tplStats[tpl] = { count: 0, imps: 0, clicks: 0, saves: 0 };
+        tplStats[tpl].count++;
+        tplStats[tpl].imps += (p.impressions || 0);
+        tplStats[tpl].clicks += (p.clicks || 0);
+        tplStats[tpl].saves += (p.saves || 0);
+
+        // Hook Type tracking
+        const hook = getHookType(p.title);
+        if (!hookStats[hook]) hookStats[hook] = { count: 0, imps: 0, clicks: 0 };
+        hookStats[hook].count++;
+        hookStats[hook].imps += (p.impressions || 0);
+        hookStats[hook].clicks += (p.clicks || 0);
+
+        // Product Opportunity tracking
+        if (p.product_id) {
+          if (!prodStats[p.product_id]) prodStats[p.product_id] = { id: p.product_id, imps: 0, clicks: 0 };
+          prodStats[p.product_id].imps += (p.impressions || 0);
+          prodStats[p.product_id].clicks += (p.clicks || 0);
+        }
+      });
+
+      const templatesHtml = Object.entries(tplStats)
+        .sort((a, b) => b[1].clicks - a[1].clicks) // sort by clicks desc
+        .map(([tpl, s]) => {
+          const ctr = s.imps > 0 ? ((s.clicks / s.imps) * 100).toFixed(2) : '0.00';
+          return `
         <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
           <span style="font-family:'DM Mono',monospace; font-size:12px; font-weight:600;">${esc(tpl)}</span>
           <div style="display:flex; gap:20px; font-size:12px; font-family:'DM Mono',monospace;">
@@ -1833,13 +2362,13 @@ function renderPerformance() {
             <span style="width:60px; text-align:right; color:var(--blue);" title="CTR">${ctr}%</span>
           </div>
         </div>`;
-    }).join('');
+        }).join('');
 
-  const hooksHtml = Object.entries(hookStats)
-    .sort((a, b) => b[1].clicks - a[1].clicks)
-    .map(([hook, s]) => {
-      const ctr = s.imps > 0 ? ((s.clicks / s.imps) * 100).toFixed(2) : '0.00';
-      return `
+      const hooksHtml = Object.entries(hookStats)
+        .sort((a, b) => b[1].clicks - a[1].clicks)
+        .map(([hook, s]) => {
+          const ctr = s.imps > 0 ? ((s.clicks / s.imps) * 100).toFixed(2) : '0.00';
+          return `
         <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);">
           <span style="font-family:'DM Mono',monospace; font-size:12px; font-weight:600;">${esc(hook)}</span>
           <div style="display:flex; gap:20px; font-size:12px; font-family:'DM Mono',monospace;">
@@ -1848,16 +2377,16 @@ function renderPerformance() {
             <span style="width:60px; text-align:right; color:var(--blue);" title="CTR">${ctr}%</span>
           </div>
         </div>`;
-    }).join('');
+        }).join('');
 
-  // 3. Top 5 Pins
-  const topPins = [...postedPins]
-    .sort((a, b) => (b.clicks || 0) - (a.clicks || 0))
-    .slice(0, 5);
+      // 3. Top 5 Pins
+      const topPins = [...postedPins]
+        .sort((a, b) => (b.clicks || 0) - (a.clicks || 0))
+        .slice(0, 5);
 
-  const topPinsHtml = topPins.map((p, i) => `
+      const topPinsHtml = topPins.map((p, i) => `
     <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border);">
-      <div style="font-family:'DM Mono',monospace; font-size:16px; font-weight:600; color:var(--muted); width:20px;">#${i+1}</div>
+      <div style="font-family:'DM Mono',monospace; font-size:16px; font-weight:600; color:var(--muted); width:20px;">#${i + 1}</div>
       <img src="${esc(p.image_url)}" style="width:40px; height:40px; border-radius:6px; object-fit:cover;" />
       <div style="flex:1;">
         <div style="font-size:13px; font-weight:500;">${esc(p.title.substring(0, 50))}${p.title.length > 50 ? '...' : ''}</div>
@@ -1870,16 +2399,16 @@ function renderPerformance() {
     </div>
   `).join('');
 
-  // 4. Opportunity Gap
-  const oppProducts = Object.values(prodStats).filter(p => {
-    const ctr = p.imps > 0 ? (p.clicks / p.imps) * 100 : 0;
-    return p.imps >= 50 && ctr < 0.5;
-  }).sort((a, b) => b.imps - a.imps).slice(0, 5);
-  
-  const oppHtml = oppProducts.length ? oppProducts.map((p) => {
-    const prodInfo = products[p.id] ? products[p.id].name : `Product #${p.id}`;
-    const ctr = ((p.clicks / p.imps) * 100).toFixed(2);
-    return `
+      // 4. Opportunity Gap
+      const oppProducts = Object.values(prodStats).filter(p => {
+        const ctr = p.imps > 0 ? (p.clicks / p.imps) * 100 : 0;
+        return p.imps >= 50 && ctr < 0.5;
+      }).sort((a, b) => b.imps - a.imps).slice(0, 5);
+
+      const oppHtml = oppProducts.length ? oppProducts.map((p) => {
+        const prodInfo = products[p.id] ? products[p.id].name : `Product #${p.id}`;
+        const ctr = ((p.clicks / p.imps) * 100).toFixed(2);
+        return `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border);">
         <div style="flex:1;">
           <div style="font-size:13px; font-weight:500;">${esc(prodInfo.substring(0, 60))}...</div>
@@ -1887,11 +2416,11 @@ function renderPerformance() {
         </div>
         <span class="badge badge-pending" style="margin-left:12px;">CTR ${ctr}%</span>
       </div>`;
-  }).join('') : '<div style="font-size:13px; color:var(--faint); padding:10px 0;">No opportunity gap products found right now.</div>';
+      }).join('') : '<div style="font-size:13px; color:var(--faint); padding:10px 0;">No opportunity gap products found right now.</div>';
 
-  const totalAmazonEarnings = Object.keys(amazonStats).reduce((sum, asin) => sum + amazonStats[asin], 0);
+      const totalAmazonEarnings = Object.keys(amazonStats).reduce((sum, asin) => sum + amazonStats[asin], 0);
 
-  content.innerHTML = `
+      content.innerHTML = `
     <!-- Stats Grid -->
     <div class="stats" style="margin-bottom: 30px; grid-template-columns: repeat(5, 1fr);">
       <div class="stat">
@@ -1945,47 +2474,47 @@ function renderPerformance() {
       </div>
     </div>
   `;
-}
+    }
 
-// ── Render products ──────────────────────────────────────────
+    // ── Render products ──────────────────────────────────────────
 
-function renderProducts() {
-  const list = document.getElementById('product-list');
-  if (!allProducts.length) {
-    list.innerHTML = `<div class="empty">
+    function renderProducts() {
+      const list = document.getElementById('product-list');
+      if (!allProducts.length) {
+        list.innerHTML = `<div class="empty">
       No products yet. Run <code>score_products.py</code> or add rows to
       the products table in Supabase to get started.
     </div>`;
-    return;
-  }
+        return;
+      }
 
-  const topScore = Math.max(...allProducts.map(p => p.score || 0));
+      const topScore = Math.max(...allProducts.map(p => p.score || 0));
 
-  list.innerHTML = allProducts.map((p, i) => {
-    const isTop    = p.score === topScore && p.active;
-    const trendCls = p.trend_dir === 'rising'  ? 'trend-rising'
-                   : p.trend_dir === 'falling' ? 'trend-falling'
-                   : 'trend-stable';
-    const trendIcon = p.trend_dir === 'rising'  ? '↑'
-                    : p.trend_dir === 'falling' ? '↓'
-                    : '→';
-    
-    // Calculate Payout
-    const price = p.price || 0;
-    const comm = p.commission || 0;
-    const payout = (price * comm) / 100;
-    
-    // Format deltas
-    const tDelta = (p.trend_delta || 0).toFixed(1);
-    const tDeltaStr = p.trend_delta > 0 ? '+' + tDelta : tDelta;
-    
-    const sDelta = p.save_delta || 0;
-    const sDeltaStr = sDelta > 0 ? '+' + sDelta : sDelta;
-    const lastScored = p.last_scored_at
-      ? new Date(p.last_scored_at).toLocaleDateString('en-GB', {day:'numeric',month:'short'})
-      : 'never';
+      list.innerHTML = allProducts.map((p, i) => {
+        const isTop = p.score === topScore && p.active;
+        const trendCls = p.trend_dir === 'rising' ? 'trend-rising'
+          : p.trend_dir === 'falling' ? 'trend-falling'
+            : 'trend-stable';
+        const trendIcon = p.trend_dir === 'rising' ? '↑'
+          : p.trend_dir === 'falling' ? '↓'
+            : '→';
 
-    return `
+        // Calculate Payout
+        const price = p.price || 0;
+        const comm = p.commission || 0;
+        const payout = (price * comm) / 100;
+
+        // Format deltas
+        const tDelta = (p.trend_delta || 0).toFixed(1);
+        const tDeltaStr = p.trend_delta > 0 ? '+' + tDelta : tDelta;
+
+        const sDelta = p.save_delta || 0;
+        const sDeltaStr = sDelta > 0 ? '+' + sDelta : sDelta;
+        const lastScored = p.last_scored_at
+          ? new Date(p.last_scored_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+          : 'never';
+
+        return `
     <div class="product-card" style="${!p.active ? 'opacity:0.55;' : ''}">
       <div class="product-img-side">
         <img src="${p.image_url || 'https://via.placeholder.com/150?text=No+Image'}" alt="product" />
@@ -1994,9 +2523,9 @@ function renderProducts() {
         <div class="product-card-top">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-              ${isTop  ? `<span class="top-badge">&#x2B50; This week&#39;s top pick</span>` : ""}
+              ${isTop ? `<span class="top-badge">&#x2B50; This week&#39;s top pick</span>` : ""}
               ${p.active ? '<span class="active-badge">Active</span>'
-                        : '<span class="paused-badge">Paused</span>'}
+            : '<span class="paused-badge">Paused</span>'}
               <span style="font-size:11px;color:var(--faint);font-family:'DM Mono',monospace;">
                 ${esc(p.category)} · ${p.commission}% commission
               </span>
@@ -2062,8 +2591,8 @@ function renderProducts() {
         <div class="product-footer">
           <div class="product-reason">
             ${p.score_reason
-              ? '💡 ' + esc(p.score_reason)
-              : 'Product ASIN: ' + esc(p.asin) + ' · ' + esc(p.category)}
+            ? '💡 ' + esc(p.score_reason)
+            : 'Product ASIN: ' + esc(p.asin) + ' · ' + esc(p.category)}
           </div>
           <div style="display:flex;gap:8px;flex-shrink:0;">
             <button class="btn-small" onclick="window.open('https://amazon.co.uk/dp/${esc(p.asin)}','_blank')">
@@ -2078,9 +2607,10 @@ function renderProducts() {
       </div>
     </div>`;
 
-  }).join('');
-}
+      }).join('');
+    }
 
-</script>
+  </script>
 </body>
+
 </html>
