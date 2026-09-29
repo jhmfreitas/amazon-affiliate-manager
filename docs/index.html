@@ -2305,6 +2305,48 @@
       return 'Statement';
     }
 
+    function getPinAgeDays(pin) {
+      const timestamp = Date.parse(pin.posted_at || '');
+      if (!Number.isFinite(timestamp)) return null;
+      return Math.max(0, Math.floor((Date.now() - timestamp) / 86400000));
+    }
+
+    function renderDiagnosticGroup(title, guidance, items, kind) {
+      const rows = items.slice(0, 4).map(item => {
+        const productName = products[item.pin.product_id]?.name || 'Product pin';
+        const pinUrl = item.pin.pinterest_id && item.pin.pinterest_id !== 'unknown'
+          ? `https://www.pinterest.com/pin/${encodeURIComponent(item.pin.pinterest_id)}/`
+          : null;
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);">
+            <img src="${esc(item.pin.image_url || '')}" alt="" loading="lazy"
+              style="width:42px;height:52px;object-fit:cover;border-radius:4px;flex-shrink:0;" />
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.pin.title || productName)}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:3px;">${esc(productName)}</div>
+              <div style="font:11px 'DM Mono',monospace;color:var(--faint);margin-top:3px;">
+                ${item.ageDays === null ? 'Age unknown' : `${item.ageDays}d`} · ${item.impressions.toLocaleString()} imps · ${item.clicks} clicks · ${item.ctr.toFixed(2)}% CTR
+              </div>
+            </div>
+            ${pinUrl ? `<a href="${esc(pinUrl)}" target="_blank" rel="noopener" class="btn-small" style="text-decoration:none;white-space:nowrap;">View pin ↗</a>` : ''}
+          </div>`;
+      }).join('');
+
+      const emptyText = kind === 'early'
+        ? 'No pins are waiting for more data.'
+        : 'No pins currently match this signal.';
+      return `
+        <div style="min-width:0;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+            <h4 style="font-size:13px;font-weight:600;margin:0;">${title}</h4>
+            <span class="badge ${kind === 'low' ? 'badge-pending' : ''}">${items.length}</span>
+          </div>
+          <p style="font-size:11px;line-height:1.5;color:var(--muted);margin:0 0 8px;">${guidance}</p>
+          ${rows || `<div style="font-size:12px;color:var(--faint);padding:8px 0;">${emptyText}</div>`}
+          ${items.length > 4 ? `<div style="font-size:11px;color:var(--faint);padding-top:6px;">${items.length - 4} more</div>` : ''}
+        </div>`;
+    }
+
     function renderPerformance() {
       const content = document.getElementById('performance-content');
       const postedPins = pins.filter(p => p.posted);
@@ -2418,6 +2460,44 @@
       </div>`;
       }).join('') : '<div style="font-size:13px; color:var(--faint); padding:10px 0;">No opportunity gap products found right now.</div>';
 
+      const pinSignals = postedPins.map(pin => {
+        const impressions = pin.impressions || 0;
+        const clicks = pin.clicks || 0;
+        const ageDays = getPinAgeDays(pin);
+        return {
+          pin,
+          impressions,
+          clicks,
+          ageDays,
+          ctr: impressions > 0 ? (clicks / impressions) * 100 : 0
+        };
+      });
+      const stillCollecting = pinSignals.filter(item =>
+        !(item.impressions >= 100 || (item.ageDays !== null && item.ageDays >= 7))
+      );
+      const lowReachPins = pinSignals.filter(item =>
+        item.ageDays !== null && item.ageDays >= 7 && item.impressions < 100
+      ).sort((a, b) => a.impressions - b.impressions);
+      const lowCtrPins = pinSignals.filter(item =>
+        item.impressions >= 100 && item.ctr < 0.5 && (item.ageDays === null || item.ageDays >= 7)
+      ).sort((a, b) => a.ctr - b.ctr);
+      const clickWinners = pinSignals.filter(item =>
+        item.impressions >= 100 && item.ctr >= 1.0 && (item.ageDays === null || item.ageDays >= 7)
+      ).sort((a, b) => b.ctr - a.ctr);
+      const actionQueueHtml = `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;">
+          <h3 style="font-size:15px;font-weight:600;margin:0 0 6px;">Pin action queue</h3>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 18px;">
+            Wait for 7 days or 100 impressions before judging a pin. Low reach points to distribution; low CTR points to the creative or offer.
+          </p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;">
+            ${renderDiagnosticGroup('Still collecting data', 'Too new or too few impressions to diagnose.', stillCollecting, 'early')}
+            ${renderDiagnosticGroup('Low reach', 'Posted 7+ days ago with fewer than 100 impressions. Review board and keyword fit.', lowReachPins, 'low')}
+            ${renderDiagnosticGroup('Low click-through', 'At least 100 impressions but under 0.5% CTR. Test a clearer hook or product benefit.', lowCtrPins, 'low')}
+            ${renderDiagnosticGroup('Click winners', 'At least 100 impressions and 1%+ CTR. Reuse the product/topic in another creative.', clickWinners, 'winner')}
+          </div>
+        </div>`;
+
       const totalAmazonEarnings = Object.keys(amazonStats).reduce((sum, asin) => sum + amazonStats[asin], 0);
 
       content.innerHTML = `
@@ -2445,6 +2525,8 @@
         <div style="font-size:10px; color:var(--muted); margin-top:4px;">Via CSV sync</div>
       </div>
     </div>
+
+    ${actionQueueHtml}
 
     <!-- Breakdown Grid -->
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px;">
@@ -2510,6 +2592,9 @@
 
         const sDelta = p.save_delta || 0;
         const sDeltaStr = sDelta > 0 ? '+' + sDelta : sDelta;
+        const impressions = p.total_impressions || 0;
+        const clicks = p.total_clicks || 0;
+        const productCtr = impressions > 0 ? ((clicks / impressions) * 100).toFixed(2) : '0.00';
         const lastScored = p.last_scored_at
           ? new Date(p.last_scored_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
           : 'never';
@@ -2558,9 +2643,19 @@
             <div class="signal-sub">Δ${tDeltaStr}</div>
           </div>
           <div class="signal">
+            <div class="signal-label">Pinterest Impressions</div>
+            <div class="signal-val">${impressions.toLocaleString()}</div>
+            <div class="signal-sub">All pins</div>
+          </div>
+          <div class="signal">
             <div class="signal-label">Pinterest Clicks</div>
-            <div class="signal-val" style="color:var(--blue);">${(p.total_clicks || 0).toLocaleString()}</div>
+            <div class="signal-val" style="color:var(--blue);">${clicks.toLocaleString()}</div>
             <div class="signal-sub">Total all pins</div>
+          </div>
+          <div class="signal">
+            <div class="signal-label">Pinterest CTR</div>
+            <div class="signal-val" style="color:var(--accent);">${productCtr}%</div>
+            <div class="signal-sub">Clicks / impressions</div>
           </div>
           <div class="signal">
             <div class="signal-label">Pinterest Saves</div>
