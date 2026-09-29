@@ -35,6 +35,19 @@ class RefreshPricesTests(unittest.TestCase):
         self.assertTrue(stored_price_matches(20.99, Decimal("20.99")))
         self.assertFalse(stored_price_matches(2099, Decimal("20.99")))
 
+    def test_extracts_price_when_offscreen_is_empty(self):
+        markup = (
+            '<span class="a-price priceToPay">'
+            '<span class="a-offscreen"></span>'
+            '<span aria-hidden="true">'
+            '<span class="a-price-symbol">&pound;</span>'
+            '<span class="a-price-whole">19<span class="a-price-decimal">.</span></span>'
+            '<span class="a-price-fraction">99</span>'
+            '</span></span>'
+        )
+        soup = BeautifulSoup(markup, "html.parser")
+        self.assertEqual(extract_current_gbp_price(soup), Decimal("19.99"))
+
 
 if __name__ == "__main__":
     unittest.main()

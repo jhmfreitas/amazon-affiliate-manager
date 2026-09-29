@@ -52,7 +52,26 @@ def extract_current_gbp_price(soup):
     """Return the current GBP offer price, excluding crossed-out list prices."""
     for selector in PRICE_SELECTORS:
         for price_tag in soup.select(selector):
+            if "a-text-price" in price_tag.get("class", []):
+                continue
             text = price_tag.get_text(" ", strip=True)
+            # If .a-offscreen was empty, read whole + fraction from parent or sibling
+            if not text:
+                parent = price_tag.parent
+                if parent:
+                    whole = parent.select_one(".a-price-whole")
+                    if whole:
+                        whole_str = whole.get_text(strip=True).rstrip(".")
+                        fraction = parent.select_one(".a-price-fraction")
+                        frac_str = fraction.get_text(strip=True) if fraction else "00"
+                        symbol = parent.select_one(".a-price-symbol")
+                        sym_str = symbol.get_text(strip=True) if symbol else "£"
+                        text = f"{sym_str}{whole_str}.{frac_str}"
+                    else:
+                        text = parent.get_text(" ", strip=True)
+
+            text = re.sub(r"\s*([.,])\s*", r"\1", text)
+            text = re.sub(r"£\s*", "£", text)
             match = GBP_PRICE_PATTERN.search(text)
             if not match:
                 continue
@@ -64,6 +83,34 @@ def extract_current_gbp_price(soup):
 
             if MIN_PRICE <= price <= MAX_PRICE:
                 return price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    # Fallback to direct price containers (where .a-offscreen is empty or absent)
+    for container_sel in (
+        "#corePriceDisplay_desktop_feature_div .priceToPay",
+        "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price)",
+        "#corePrice_desktop .priceToPay",
+        "#corePrice_desktop .a-price:not(.a-text-price)",
+        "#apex_desktop .priceToPay",
+        "#buybox .a-price:not(.a-text-price)",
+        ".priceToPay",
+    ):
+        for container in soup.select(container_sel):
+            whole = container.select_one(".a-price-whole")
+            if whole:
+                whole_str = whole.get_text(strip=True).rstrip(".")
+                fraction = container.select_one(".a-price-fraction")
+                frac_str = fraction.get_text(strip=True) if fraction else "00"
+                symbol = container.select_one(".a-price-symbol")
+                sym_str = symbol.get_text(strip=True) if symbol else "£"
+                raw = f"{sym_str}{whole_str}.{frac_str}"
+                match = GBP_PRICE_PATTERN.search(raw)
+                if match:
+                    try:
+                        price = Decimal(match.group(1).replace(",", ""))
+                        if MIN_PRICE <= price <= MAX_PRICE:
+                            return price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    except InvalidOperation:
+                        continue
     return None
 
 
