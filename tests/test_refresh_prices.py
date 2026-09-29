@@ -49,5 +49,19 @@ class RefreshPricesTests(unittest.TestCase):
         self.assertEqual(extract_current_gbp_price(soup), Decimal("19.99"))
 
 
+    def test_extracts_price_from_aok_offscreen(self):
+        markup = '<span class="aok-offscreen">&pound;19.99</span>'
+        soup = BeautifulSoup(markup, "html.parser")
+        self.assertEqual(extract_current_gbp_price(soup), Decimal("19.99"))
+
+    def test_extracts_price_from_hidden_inputs(self):
+        markup = (
+            '<input type="hidden" name="items[0.base][customerVisiblePrice][amount]" value="19.99"/>'
+            '<input type="hidden" name="items[0.base][customerVisiblePrice][currencyCode]" value="GBP"/>'
+        )
+        soup = BeautifulSoup(markup, "html.parser")
+        self.assertEqual(extract_current_gbp_price(soup), Decimal("19.99"))
+
+
 if __name__ == "__main__":
     unittest.main()

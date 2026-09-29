@@ -50,12 +50,38 @@ PRICE_SELECTORS = (
 
 def extract_current_gbp_price(soup):
     """Return the current GBP offer price, excluding crossed-out list prices."""
-    for selector in PRICE_SELECTORS:
+    # 1. Hidden form inputs (Amazon's buybox checkout data — most stable)
+    amt_input = soup.select_one('input[name*="customerVisiblePrice"][name*="amount"]')
+    cur_input = soup.select_one('input[name*="customerVisiblePrice"][name*="currencyCode"]')
+    if amt_input and amt_input.get("value"):
+        cur = (cur_input.get("value") if cur_input else "GBP").strip().upper()
+        if cur == "GBP":
+            try:
+                p = Decimal(amt_input["value"].replace(",", ""))
+                if MIN_PRICE <= p <= MAX_PRICE:
+                    return p.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except InvalidOperation:
+                pass
+
+    val_input = soup.select_one('input[name="priceValue"]')
+    sym_input = soup.select_one('input[name="priceSymbol"]')
+    if val_input and val_input.get("value"):
+        sym = (sym_input.get("value") if sym_input else "£").strip()
+        if sym in ("£", "&pound;", "\u00a3", "GBP"):
+            try:
+                p = Decimal(val_input["value"].replace(",", ""))
+                if MIN_PRICE <= p <= MAX_PRICE:
+                    return p.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except InvalidOperation:
+                pass
+
+    # 2. Modern and standard offscreen accessibility spans (.aok-offscreen, .a-offscreen)
+    for selector in PRICE_SELECTORS + (".aok-offscreen",):
         for price_tag in soup.select(selector):
             if "a-text-price" in price_tag.get("class", []):
                 continue
             text = price_tag.get_text(" ", strip=True)
-            # If .a-offscreen was empty, read whole + fraction from parent or sibling
+            # If offscreen was empty, read whole + fraction from parent or sibling
             if not text:
                 parent = price_tag.parent
                 if parent:
@@ -84,7 +110,7 @@ def extract_current_gbp_price(soup):
             if MIN_PRICE <= price <= MAX_PRICE:
                 return price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-    # Fallback to direct price containers (where .a-offscreen is empty or absent)
+    # 3. Direct price containers (where .a-offscreen is empty or absent)
     for container_sel in (
         "#corePriceDisplay_desktop_feature_div .priceToPay",
         "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price)",
@@ -93,6 +119,7 @@ def extract_current_gbp_price(soup):
         "#apex_desktop .priceToPay",
         "#buybox .a-price:not(.a-text-price)",
         ".priceToPay",
+        ".apex-pricetopay-value",
     ):
         for container in soup.select(container_sel):
             whole = container.select_one(".a-price-whole")
