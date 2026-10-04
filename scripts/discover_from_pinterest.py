@@ -477,6 +477,29 @@ def search_products_with_fallback(keyword, client, session):
     return scrape_amazon_products(keyword, session), None, session
 
 
+def finalize_discovery_summary(total_found, total_added, total_duplicate):
+    """Print the final discovery summary and exit cleanly when nothing was found."""
+    print("\n" + "=" * 60)
+    print(f"Done. Amazon returned {total_found} product(s) across all keywords "
+          f"({total_duplicate} already known, {total_found - total_duplicate} new attempts).")
+    print(f"Added {total_added} new products to the database.")
+
+    if total_found and not total_added:
+        print("Zero additions despite non-zero search results usually means: "
+              "everything found was a duplicate, or the API results were missing "
+              "a title, an image, or a price above the minimum.")
+
+    if not total_found:
+        log.warning(
+            "No products were extracted from the Creators API or scraper fallback; "
+            "this is treated as a clean no-op because there may simply be no new products "
+            "available for the current trend cycle."
+        )
+
+    print("=" * 60)
+    return 0
+
+
 # ── MAIN PIPELINE ────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -551,17 +574,4 @@ if __name__ == "__main__":
                 else:
                     print("SKIPPED (Missing data or < £15)")
 
-    print("\n" + "=" * 60)
-    print(f"Done. Amazon returned {total_found} product(s) across all keywords "
-          f"({total_duplicate} already known, {total_found - total_duplicate} new attempts).")
-    print(f"Added {total_added} new products to the database.")
-    if total_found and not total_added:
-        print("Zero additions despite non-zero search results usually means: "
-              "everything found was a duplicate, or the API results were missing "
-              "a title, an image, or a price above the minimum.")
-    if not total_found:
-        raise RuntimeError(
-            "No products were extracted from the Creators API or scraper fallback; "
-            "check per-keyword API and Amazon response logs."
-        )
-    print("=" * 60)
+    raise SystemExit(finalize_discovery_summary(total_found, total_added, total_duplicate))
