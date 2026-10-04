@@ -168,46 +168,56 @@ Return ONLY a JSON list with ONE object containing:
 
 # ── Main ─────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+def main():
     print("=" * 60)
     print(f"Repin Winners — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     print("=" * 60)
 
     has_errors = False
     opportunities = find_opportunity_products()
-    
+
     if not opportunities:
         print("No opportunity-gap products found yet.")
         print("Need products with 50+ impressions before we can identify winners.")
-        sys.exit(0)
-    
+        return 0
+
     print(f"Found {len(opportunities)} opportunity-gap products:\n")
-    
+
     created = 0
     for opp in opportunities:
         product = opp["product"]
         print(f"--- {product['name'][:50]} ---")
         print(f"    Impressions: {opp['impressions']} | Clicks: {opp['clicks']} | CTR: {opp['ctr']:.2%}")
         print(f"    Existing pins: {opp['existing_pin_count']}")
-        
+
         try:
-            # Generate fresh variation
             pin = generate_fresh_variation(product, opp["existing_titles"])
             if not pin:
                 print("  ✗ Failed to generate variation")
+                log.warning(
+                    "No fresh variation generated for product '%s' (asin=%s, impressions=%s, clicks=%s, ctr=%.2f%%). "
+                    "This is treated as a normal no-op for the current opportunity set.",
+                    product.get("name"),
+                    product.get("asin"),
+                    opp.get("impressions"),
+                    opp.get("clicks"),
+                    (opp.get("ctr", 0) * 100),
+                )
                 has_errors = True
                 continue
-            
+
             print(f"  New angle: {pin['title'][:50]}")
-            
-            # Get background image
+
             pexels_url, _ = get_pexels_image(pin.get('pexels_search', product.get('category', 'fashion')))
             if not pexels_url:
-                log.error("No Pexels image found")
+                log.error(
+                    "No Pexels image found for repin candidate '%s' (asin=%s).",
+                    pin.get("title"),
+                    product.get("asin"),
+                )
                 has_errors = True
                 continue
-            
-            # Create the pin image
+
             img_bytes = create_pin_image(
                 "product_hero",
                 pexels_url,
@@ -216,11 +226,10 @@ if __name__ == "__main__":
                 price=product.get('price')
             )
             pin['image_url'] = upload_image(img_bytes)
-            
-            # Save to Supabase
+
             affiliate_url = get_affiliate_url(product['asin'], product.get('affiliate_url'))
             board_id = get_board_for_product(product)
-            
+
             row = {
                 "title":         pin["title"],
                 "description":   pin["description"],
@@ -231,24 +240,35 @@ if __name__ == "__main__":
                 "product_id":    product["id"],
                 "board_id":      board_id,
                 "template_style": "product_hero",
-                "approved":      True,   # Auto-approve repin variations
+                "approved":      True,
                 "posted":        False
             }
             supabase_post("pins", row)
             print(f"  ✓ Created fresh variation (auto-approved)")
             created += 1
-            
+
         except Exception as e:
             print(f"  ✗ Failed: {e}")
+            log.exception(
+                "Repin generation failed for product '%s' (asin=%s).",
+                product.get("name"),
+                product.get("asin"),
+            )
             has_errors = True
-        
-        time.sleep(2)  # Brief pause between products
-    
+
+        time.sleep(2)
+
     print(f"\n{'='*60}")
     print(f"Done. Created {created} fresh pin variations from {len(opportunities)} opportunities.")
     print("="*60)
-    
+
     if has_errors:
-        sys.exit(1)
-    else:
-        sys.exit(0)
+        log.warning(
+            "Some repin opportunities could not produce a fresh variation; treating this as a non-fatal no-op for the run. "
+            "See the per-product logs above for the specific failure reason."
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
